@@ -4,6 +4,12 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'VERBA — Words that work.',
   description: 'Understand it. Recall it. Use it. Osobní aplikace pro cílené studium odborného jazyka.',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'VERBA',
+  },
 };
 
 export const viewport: Viewport = {

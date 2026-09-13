@@ -1,0 +1,16 @@
+﻿{
+  "name": "VERBA — Words that work",
+  "short_name": "VERBA",
+  "description": "Understand it. Recall it. Use it.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F8FAFC",
+  "theme_color": "#0F172A",
+  "icons": [
+    {
+      "src": "/verba-icon.png",
+      "sizes": "192x192 512x512",
+      "type": "image/png"
+    }
+  ]
+}
