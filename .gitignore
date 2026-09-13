@@ -1,0 +1,32 @@
+# Dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# Testing
+/coverage
+
+# Next.js build output
+/.next/
+/out/
+
+# Production artifacts
+/build
+
+# Environment files
+.env*.local
+.env
+
+# Local database (Render persistent disk mounts to /data)
+# data/verba.db
+
+# Audio cache
+/public/audio_cache/*
+!/public/audio_cache/.gitkeep
+
+# System & IDE files
+.DS_Store
+*.pem
+*.log
+.vscode/
+.idea/

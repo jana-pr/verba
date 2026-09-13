@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --verba-indigo: #5146E5;
+  --verba-indigo-dark: #3730A3;
+  --verba-teal: #14A89E;
+  --verba-ink: #182033;
+  --verba-slate: #667085;
+  --verba-canvas: #F7F8FC;
+  --verba-card: #FFFFFF;
+  --verba-mastered: #16875D;
+  --verba-review: #C87912;
+  --verba-error: #C83C4A;
+}
+
+body {
+  background-color: #F7F8FC;
+  color: #182033;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100dvh;
+}
+
+/* Card utility styles matching VERBA Design v1.1 */
+.verba-card {
+  background-color: #FFFFFF;
+  border-radius: 16px;
+  border: 1px solid rgba(24, 32, 51, 0.06);
+  box-shadow: 0 2px 8px -2px rgba(24, 32, 51, 0.04), 0 1px 3px -1px rgba(24, 32, 51, 0.02);
+  transition: all 0.15s ease;
+}
+
+.verba-card-hover:hover {
+  border-color: rgba(81, 70, 229, 0.25);
+  box-shadow: 0 8px 24px -4px rgba(81, 70, 229, 0.08), 0 2px 6px -1px rgba(24, 32, 51, 0.04);
+}
+
+/* Practice Focus Mode container */
+.focus-viewport {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Smooth microinteractions */
+button, a {
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Custom scrollbars for clean UI */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(102, 112, 133, 0.25);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(102, 112, 133, 0.45);
+}
