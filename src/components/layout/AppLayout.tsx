@@ -29,6 +29,7 @@ import { MobileQrModal } from '../mobile/MobileQrModal';
 import { Course } from '@/lib/db/schema';
 import { 
   markCourseAsOpened, 
+  markCourseAsDeleted,
   getLastActiveCourseId, 
   performAutoSync, 
   getClientVault,
@@ -116,6 +117,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     fetchAndSyncCourses();
 
     const handleCoursesUpdated = () => {
+      setCourses(getAllMergedCourses());
       fetchAndSyncCourses();
     };
     window.addEventListener('courses-updated', handleCoursesUpdated);
@@ -164,15 +166,29 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     }
 
     try {
-      const res = await fetch(`/api/courses/${courseId}`, { method: 'DELETE' });
-      if (res.ok) {
-        setCourses((prev) => prev.filter((c) => c.id !== courseId));
-        window.dispatchEvent(new Event('courses-updated'));
-        if (currentCourse?.id === courseId) {
-          window.location.href = '/';
+      // 1. Immediately mark deleted in client storage so it NEVER reappears
+      markCourseAsDeleted(courseId);
+
+      // 2. Remove from local state immediately
+      const remaining = courses.filter((c) => c.id !== courseId);
+      setCourses(remaining);
+
+      // 3. Call server DELETE API
+      await fetch(`/api/courses/${courseId}`, { method: 'DELETE' });
+
+      // 4. Dispatch event to notify all components
+      window.dispatchEvent(new Event('courses-updated'));
+
+      // 5. If deleted course was active, switch to next available or redirect
+      if (currentCourse?.id === courseId) {
+        if (remaining.length > 0) {
+          const nextCourse = remaining[0];
+          setCurrentCourse(nextCourse);
+          markCourseAsOpened(nextCourse.id, nextCourse);
+          window.location.href = `/courses/${nextCourse.id}`;
+        } else {
+          window.location.href = '/courses/new';
         }
-      } else {
-        alert('Chyba při mazání kurzu.');
       }
     } catch (err) {
       console.error('Error deleting course:', err);

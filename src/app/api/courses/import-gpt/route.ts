@@ -63,6 +63,7 @@ export async function POST(req: NextRequest) {
     const nowIso = new Date().toISOString();
 
     const db = getDb();
+    db.prepare('DELETE FROM deleted_courses WHERE course_id = ?').run(courseId);
     db.exec('BEGIN TRANSACTION;');
 
     try {
@@ -277,12 +278,28 @@ export async function POST(req: NextRequest) {
         console.warn('Could not update seed-courses.json:', seedErr);
       }
 
+      const createdCourse = {
+        id: courseId,
+        user_id: DEFAULT_USER_ID,
+        target_language: targetLanguage,
+        native_language: nativeLanguage,
+        cefr_level: cefrLevel,
+        domain_area: domainArea,
+        status: 'ready',
+        total_lessons: lessonsList.length,
+        completed_lessons_count: lessonsList.length,
+        created_at: nowIso,
+        updated_at: nowIso,
+      };
+
       return NextResponse.json({
         success: true,
         courseId,
         domainArea,
         lessonCount: lessonsList.length,
         itemCount: totalItemsInserted,
+        course: createdCourse,
+        lessons: lessonsList,
         message: `Kurz „${domainArea}“ byl úspěšně vytvořen (${lessonsList.length} lekcí, ${totalItemsInserted} slovíček).`,
       });
     } catch (txErr: any) {

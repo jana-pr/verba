@@ -8,9 +8,10 @@ export async function GET() {
     const db = getDb();
     ensureSeedCourses(db);
     const stmt = db.prepare(`
-      SELECT * FROM courses 
-      WHERE user_id = ? 
-      ORDER BY created_at DESC
+      SELECT c.* FROM courses c
+      LEFT JOIN deleted_courses d ON c.id = d.course_id
+      WHERE c.user_id = ? AND d.course_id IS NULL
+      ORDER BY c.created_at DESC
     `);
     const courses = stmt.all(DEFAULT_USER_ID);
     return NextResponse.json(courses);

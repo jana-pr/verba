@@ -18,7 +18,7 @@ import {
   Trash2
 } from 'lucide-react';
 
-import { markCourseAsOpened } from '@/lib/client-storage';
+import { markCourseAsOpened, markCourseAsDeleted } from '@/lib/client-storage';
 
 export default function CourseDetailPage({
   params,
@@ -36,24 +36,19 @@ export default function CourseDetailPage({
 
   const handleDeleteCourse = async () => {
     if (!course) return;
-    if (!confirm(`Opravdu chcete trvale smazat kurz „${course.domain_area}“? Všechny lekce, slovíčka a historie pokusů budou nenávratně odstraněny.`)) {
+    if (!confirm(`Opravdu chcete trvale smazat kurz „${course.domain_area}“? Všechna data kurzu budou nenávratně odstraněna.`)) {
       return;
     }
 
     setIsDeleting(true);
+    markCourseAsDeleted(id);
+    window.dispatchEvent(new Event('courses-updated'));
     try {
-      const res = await fetch(`/api/courses/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        window.dispatchEvent(new Event('courses-updated'));
-        window.location.href = '/';
-      } else {
-        alert('Chyba při mazání kurzu.');
-        setIsDeleting(false);
-      }
+      await fetch(`/api/courses/${id}`, { method: 'DELETE' });
     } catch (err) {
       console.error(err);
-      setIsDeleting(false);
     }
+    window.location.href = '/';
   };
 
   useEffect(() => {

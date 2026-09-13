@@ -157,6 +157,11 @@ function initTables(db: DatabaseSync) {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS deleted_courses (
+      course_id TEXT PRIMARY KEY,
+      deleted_at TEXT NOT NULL
+    );
+
     -- Ensure default user exists
     INSERT OR IGNORE INTO users (id, email, full_name, created_at)
     VALUES ('usr_jana_default', 'jana@verba.local', 'Jana Prošková', datetime('now'));
@@ -173,25 +178,33 @@ export function ensureSeedCourses(db: DatabaseSync) {
     const data = JSON.parse(fs.readFileSync(seedFile, 'utf8'));
     if (!data.courses || data.courses.length === 0) return;
 
-    // Check if any seed course is missing from DB
+    // Check which courses have been explicitly deleted by user
+    const deletedRows = db.prepare('SELECT course_id FROM deleted_courses').all() as { course_id: string }[];
+    const deletedIds = new Set(deletedRows.map((r) => r.course_id));
+
+    // Only consider courses that the user hasn't explicitly deleted
+    const eligibleCourses = (data.courses || []).filter((c: any) => !deletedIds.has(c.id));
+    if (eligibleCourses.length === 0) return;
+
+    // Check if any eligible course is missing from DB
     const existingIds = new Set(
       (db.prepare('SELECT id FROM courses').all() as { id: string }[]).map((r) => r.id)
     );
 
-    const hasMissing = data.courses.some((c: any) => !existingIds.has(c.id));
-    if (!hasMissing && existingIds.size >= 4) {
-      // All core courses are already present
+    const hasMissing = eligibleCourses.some((c: any) => !existingIds.has(c.id));
+    if (!hasMissing) {
+      // All eligible courses are already present
       return;
     }
 
-    console.log('Seeding / restoring missing core courses from data/seed-courses.json...');
+    console.log('Seeding / restoring eligible core courses from data/seed-courses.json...');
     db.exec('BEGIN TRANSACTION;');
     try {
       const insertCourse = db.prepare(`
         INSERT OR IGNORE INTO courses (id, user_id, target_language, native_language, cefr_level, domain_area, status, total_lessons, completed_lessons_count, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
-      for (const c of data.courses || []) {
+      for (const c of eligibleCourses) {
         insertCourse.run(c.id, c.user_id, c.target_language, c.native_language, c.cefr_level, c.domain_area, c.status, c.total_lessons, c.completed_lessons_count, c.created_at, c.updated_at);
       }
 
@@ -200,6 +213,7 @@ export function ensureSeedCourses(db: DatabaseSync) {
         VALUES (?, ?, ?, ?, ?, ?)
       `);
       for (const o of data.outlines || []) {
+        if (deletedIds.has(o.course_id)) continue;
         insertOutline.run(o.id, o.course_id, o.outline_json, o.is_approved, o.approved_at, o.created_at);
       }
 
@@ -208,6 +222,7 @@ export function ensureSeedCourses(db: DatabaseSync) {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       for (const l of data.lessons || []) {
+        if (deletedIds.has(l.course_id)) continue;
         insertLesson.run(l.id, l.course_id, l.lesson_number, l.title, l.theme_focus, l.article_title, l.article_body, l.listening_script, l.status, l.created_at);
       }
 
@@ -216,6 +231,7 @@ export function ensureSeedCourses(db: DatabaseSync) {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       for (const it of data.items || []) {
+        if (deletedIds.has(it.course_id)) continue;
         insertItem.run(it.id, it.lesson_id, it.course_id, it.item_type, it.target_text, it.czech_text, it.context_note, it.example_sentence_target, it.example_sentence_czech, it.phonetic_hint || null, it.audio_url || null, it.created_at);
       }
 
@@ -224,6 +240,7 @@ export function ensureSeedCourses(db: DatabaseSync) {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       for (const s of data.states || []) {
+        if (deletedIds.has(s.course_id)) continue;
         insertState.run(s.id, s.user_id, s.learning_item_id, s.course_id, s.cz_to_target_state, s.cz_to_target_streak, s.cz_to_target_last_reviewed || null, s.cz_to_target_next_review || null, s.target_to_cz_state, s.target_to_cz_streak, s.target_to_cz_last_reviewed || null, s.target_to_cz_next_review || null, s.overall_state, s.updated_at);
       }
 

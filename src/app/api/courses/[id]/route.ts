@@ -64,53 +64,42 @@ export async function DELETE(
     const { id } = await context.params;
     const db = getDb();
 
-    // Verify ownership
-    const courseStmt = db.prepare(`
-      SELECT id, domain_area FROM courses 
-      WHERE id = ? AND user_id = ?
-    `);
-    const course = courseStmt.get(id, DEFAULT_USER_ID) as any;
+    // 1. Record in deleted_courses table unconditionally so it is NEVER seeded or resurrected
+    db.prepare(`
+      INSERT OR REPLACE INTO deleted_courses (course_id, deleted_at)
+      VALUES (?, ?)
+    `).run(id, new Date().toISOString());
 
-    if (!course) {
-      return NextResponse.json({ error: 'Course not found' }, { status: 404 });
-    }
-
-    // Cascade delete course and all child records
+    // 2. Cascade delete course and all child records if it exists in SQLite
     db.exec('PRAGMA foreign_keys = ON;');
-    db.prepare('DELETE FROM courses WHERE id = ? AND user_id = ?').run(id, DEFAULT_USER_ID);
+    db.prepare('DELETE FROM courses WHERE id = ?').run(id);
 
-    // Sync to seed-courses.json
+    // 3. Remove deleted course from seed-courses.json
     try {
       const path = await import('node:path');
       const fs = await import('node:fs');
       const seedPath = path.join(process.cwd(), 'data', 'seed-courses.json');
-      const courses = db.prepare('SELECT * FROM courses').all();
-      const outlines = db.prepare('SELECT * FROM curriculum_outlines').all();
-      const allLessons = db.prepare('SELECT * FROM lessons').all();
-      const allItems = db.prepare('SELECT * FROM learning_items').all();
-      const allStates = db.prepare('SELECT * FROM user_item_states').all();
-      const allExercises = db.prepare('SELECT * FROM lesson_exercises').all();
-      const allArticles = db.prepare('SELECT * FROM transfer_articles').all();
-
-      const backup = {
-        version: '1.1',
-        exportedAt: new Date().toISOString(),
-        courses,
-        outlines,
-        lessons: allLessons,
-        items: allItems,
-        states: allStates,
-        exercises: allExercises,
-        articles: allArticles,
-      };
-      fs.writeFileSync(seedPath, JSON.stringify(backup, null, 2), 'utf-8');
+      if (fs.existsSync(seedPath)) {
+        const seedData = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+        if (Array.isArray(seedData.courses)) {
+          seedData.courses = seedData.courses.filter((c: any) => c.id !== id);
+          if (Array.isArray(seedData.outlines)) seedData.outlines = seedData.outlines.filter((o: any) => o.course_id !== id);
+          if (Array.isArray(seedData.lessons)) seedData.lessons = seedData.lessons.filter((l: any) => l.course_id !== id);
+          if (Array.isArray(seedData.items)) seedData.items = seedData.items.filter((it: any) => it.course_id !== id);
+          if (Array.isArray(seedData.states)) seedData.states = seedData.states.filter((st: any) => st.course_id !== id);
+          if (Array.isArray(seedData.exercises)) seedData.exercises = seedData.exercises.filter((ex: any) => ex.course_id !== id);
+          if (Array.isArray(seedData.articles)) seedData.articles = seedData.articles.filter((ar: any) => ar.course_id !== id);
+          fs.writeFileSync(seedPath, JSON.stringify(seedData, null, 2), 'utf-8');
+        }
+      }
     } catch (seedErr) {
       console.warn('Could not update seed-courses.json on delete:', seedErr);
     }
 
     return NextResponse.json({
       success: true,
-      message: `Kurz „${course.domain_area}“ byl úspěšně smazán.`,
+      courseId: id,
+      message: 'Kurz byl úspěšně trvale smazán.',
     });
   } catch (error) {
     console.error('Error deleting course:', error);

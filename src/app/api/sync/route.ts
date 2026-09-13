@@ -13,10 +13,21 @@ const STATE_RANKS: Record<string, number> = {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { clientCourses = [], clientStates = [], clientLogs = [] } = body;
+    const { clientCourses = [], clientStates = [], clientLogs = [], clientDeletedIds = [] } = body;
 
     const db = getDb();
     ensureSeedCourses(db);
+
+    // Record any client-deleted IDs into deleted_courses
+    for (const did of clientDeletedIds) {
+      if (typeof did === 'string' && did) {
+        db.prepare('INSERT OR IGNORE INTO deleted_courses (course_id, deleted_at) VALUES (?, ?)').run(did, new Date().toISOString());
+      }
+    }
+
+    const deletedRows = db.prepare('SELECT course_id FROM deleted_courses').all() as { course_id: string }[];
+    const deletedIds = new Set(deletedRows.map(r => r.course_id));
+
     db.exec('PRAGMA foreign_keys = ON;');
     db.exec('BEGIN TRANSACTION;');
 
@@ -26,7 +37,7 @@ export async function POST(req: NextRequest) {
     try {
       // 1. Restore any courses that the client has but the server is missing (e.g. after fresh redeploy)
       for (const c of clientCourses) {
-        if (!c.id) continue;
+        if (!c.id || deletedIds.has(c.id)) continue; // Never restore an explicitly deleted course!
         const exists = db.prepare('SELECT id FROM courses WHERE id = ?').get(c.id);
 
         if (!exists) {
@@ -278,8 +289,13 @@ export async function POST(req: NextRequest) {
         console.warn('Could not sync to seed-courses.json:', seedErr);
       }
 
-      // Return fresh state to client
-      const currentCourses = db.prepare('SELECT * FROM courses ORDER BY updated_at DESC, created_at DESC').all();
+      // Return fresh state to client (only non-deleted courses!)
+      const currentCourses = db.prepare(`
+        SELECT c.* FROM courses c
+        LEFT JOIN deleted_courses d ON c.id = d.course_id
+        WHERE c.user_id = ? AND d.course_id IS NULL
+        ORDER BY c.updated_at DESC, c.created_at DESC
+      `).all(DEFAULT_USER_ID);
       const currentStates = db.prepare('SELECT * FROM user_item_states WHERE user_id = ?').all(DEFAULT_USER_ID);
 
       return NextResponse.json({
@@ -288,6 +304,7 @@ export async function POST(req: NextRequest) {
         mergedStates: mergedStatesCount,
         courses: currentCourses,
         states: currentStates,
+        deletedCourseIds: Array.from(deletedIds),
       });
     } catch (txError: any) {
       db.exec('ROLLBACK;');

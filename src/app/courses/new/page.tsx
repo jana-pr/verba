@@ -4,7 +4,12 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { generateGptCoursePrompt } from '@/lib/gpt-course-prompt';
-import { getAllMergedCourses } from '@/lib/client-storage';
+import { 
+  getAllMergedCourses, 
+  markCourseAsOpened, 
+  markCourseAsDeleted, 
+  saveImportedCourseToStorage 
+} from '@/lib/client-storage';
 import { 
   Sparkles, 
   Copy, 
@@ -134,13 +139,41 @@ export default function NewCoursePage() {
         throw new Error(data.error || 'Chyba při importu kurzu.');
       }
 
-      setImportSuccess(data.message || 'Kurz byl úspěšně vytvořen!');
+      // Extract raw lessons from jsonInput if possible
+      let parsedLessons = [];
+      try {
+        const parsed = JSON.parse(jsonInput);
+        parsedLessons = parsed.lessons || parsed.course?.lessons || [];
+      } catch {}
+
+      // Permanently save to client storage vault so it NEVER disappears!
+      const fullCourse = data.course || {
+        id: data.courseId,
+        domain_area: data.domainArea || domainArea,
+        target_language: targetLanguage,
+        native_language: 'cs',
+        cefr_level: cefrLevel,
+        status: 'ready',
+        total_lessons: data.lessonCount || parsedLessons.length,
+        completed_lessons_count: data.lessonCount || parsedLessons.length,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      saveImportedCourseToStorage({
+        ...fullCourse,
+        lessons: data.lessons || parsedLessons,
+        rawJson: jsonInput,
+      });
+
+      markCourseAsOpened(data.courseId, fullCourse);
+      setImportSuccess(data.message || 'Kurz byl úspěšně vytvořen a trvale uložen!');
       window.dispatchEvent(new Event('courses-updated'));
       fetchPreparedCourses();
 
       setTimeout(() => {
         router.push(`/courses/${data.courseId}`);
-      }, 1000);
+      }, 800);
     } catch (err: any) {
       setImportError(err.message || 'Nepodařilo se naimportovat kurz.');
       setIsImporting(false);
@@ -155,16 +188,19 @@ export default function NewCoursePage() {
       return;
     }
 
+    // 1. Mark as deleted in client storage immediately
+    markCourseAsDeleted(courseId);
+    setPreparedCourses((prev) => prev.filter((c) => c.id !== courseId));
+    window.dispatchEvent(new Event('courses-updated'));
+
+    // 2. Delete on server
     try {
       const res = await fetch(`/api/courses/${courseId}`, { method: 'DELETE' });
-      if (res.ok) {
-        setPreparedCourses((prev) => prev.filter((c) => c.id !== courseId));
-        window.dispatchEvent(new Event('courses-updated'));
-      } else {
-        alert('Chyba při mazání kurzu.');
+      if (!res.ok) {
+        console.warn('Server delete response note:', res.status);
       }
     } catch (err) {
-      console.error('Error deleting preset course:', err);
+      console.error('Error deleting preset course on server:', err);
     }
   };
 
@@ -674,7 +710,10 @@ export default function NewCoursePage() {
                       <div className="flex items-center justify-between pt-2 border-t border-slate-100/80">
                         <button
                           type="button"
-                          onClick={() => router.push(`/courses/${c.id}`)}
+                          onClick={() => {
+                            markCourseAsOpened(c.id, c);
+                            router.push(`/courses/${c.id}`);
+                          }}
                           className="text-xs font-semibold text-verba-indigo hover:text-verba-indigo-dark flex items-center gap-1"
                         >
                           <span>Otevřít kurz</span>
