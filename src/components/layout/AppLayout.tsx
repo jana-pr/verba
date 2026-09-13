@@ -29,11 +29,13 @@ import { MobileQrModal } from '../mobile/MobileQrModal';
 import { Course } from '@/lib/db/schema';
 import { 
   markCourseAsOpened, 
+  markCourseAsClosed,
   markCourseAsDeleted,
   getLastActiveCourseId, 
   performAutoSync, 
   getClientVault,
   getAllMergedCourses,
+  getOpenedCourses,
   DEFAULT_PRESET_COURSES
 } from '@/lib/client-storage';
 
@@ -54,16 +56,22 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     ? courseIdFromPath
     : activeCourseId;
 
-  // Immediately initialize with all merged courses (preset defaults + local storage)
+  // All available courses (presets + imported)
   const [courses, setCourses] = useState<Course[]>(() => {
     return getAllMergedCourses();
   });
 
+  // Opened courses only ("Mé kurzy")
+  const [openedCourses, setOpenedCourses] = useState<Course[]>(() => {
+    return getOpenedCourses(getAllMergedCourses());
+  });
+
   const [currentCourse, setCurrentCourse] = useState<Course | null>(() => {
     const all = getAllMergedCourses();
+    const opened = getOpenedCourses(all);
     const savedActiveId = getLastActiveCourseId();
     const targetId = effectiveCourseId || savedActiveId;
-    return (targetId && all.find((c: any) => c.id === targetId)) || all[0] || null;
+    return (targetId && all.find((c: any) => c.id === targetId)) || opened[0] || all[0] || null;
   });
 
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -91,11 +99,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           const serverData: Course[] = await res.json();
           if (Array.isArray(serverData)) {
             const merged = getAllMergedCourses(serverData);
+            const opened = getOpenedCourses(merged);
             setCourses(merged);
+            setOpenedCourses(opened);
 
             const savedActiveId = getLastActiveCourseId();
             const targetId = effectiveCourseId || savedActiveId;
-            const found = (targetId && merged.find((c) => c.id === targetId)) || merged[0];
+            const found = (targetId && merged.find((c) => c.id === targetId)) || opened[0] || merged[0];
             if (found) {
               setCurrentCourse(found);
               markCourseAsOpened(found.id, found);
@@ -117,7 +127,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     fetchAndSyncCourses();
 
     const handleCoursesUpdated = () => {
-      setCourses(getAllMergedCourses());
+      const all = getAllMergedCourses();
+      const opened = getOpenedCourses(all);
+      setCourses(all);
+      setOpenedCourses(opened);
       fetchAndSyncCourses();
     };
     window.addEventListener('courses-updated', handleCoursesUpdated);
@@ -153,6 +166,28 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     }
   };
 
+  // Close course from "Mé kurzy" (retains it in "Předpřipravené kurzy" / DB)
+  const handleCloseCourse = (courseId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    markCourseAsClosed(courseId);
+    const remaining = openedCourses.filter((c) => c.id !== courseId);
+    setOpenedCourses(remaining);
+
+    // If current active course was closed, navigate to next available opened course
+    if (currentCourse?.id === courseId) {
+      if (remaining.length > 0) {
+        const next = remaining[0];
+        setCurrentCourse(next);
+        markCourseAsOpened(next.id, next);
+        window.location.href = `/courses/${next.id}`;
+      } else {
+        window.location.href = '/courses/new?tab=presets';
+      }
+    }
+  };
+
   const handleDeleteCourse = async (
     courseId: string,
     courseName: string,
@@ -161,7 +196,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     e.stopPropagation();
     e.preventDefault();
 
-    if (!confirm(`Opravdu chcete smazat kurz „${courseName}“? Všechna data kurzu budou nenávratně odstraněna.`)) {
+    if (!confirm(`Opravdu chcete trvale smazat kurz „${courseName}“? Všechna data kurzu budou nenávratně odstraněna.`)) {
       return;
     }
 
@@ -170,8 +205,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       markCourseAsDeleted(courseId);
 
       // 2. Remove from local state immediately
-      const remaining = courses.filter((c) => c.id !== courseId);
-      setCourses(remaining);
+      const remainingAll = courses.filter((c) => c.id !== courseId);
+      const remainingOpened = openedCourses.filter((c) => c.id !== courseId);
+      setCourses(remainingAll);
+      setOpenedCourses(remainingOpened);
 
       // 3. Call server DELETE API
       await fetch(`/api/courses/${courseId}`, { method: 'DELETE' });
@@ -181,11 +218,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
       // 5. If deleted course was active, switch to next available or redirect
       if (currentCourse?.id === courseId) {
-        if (remaining.length > 0) {
-          const nextCourse = remaining[0];
+        if (remainingOpened.length > 0) {
+          const nextCourse = remainingOpened[0];
           setCurrentCourse(nextCourse);
           markCourseAsOpened(nextCourse.id, nextCourse);
           window.location.href = `/courses/${nextCourse.id}`;
+        } else if (remainingAll.length > 0) {
+          window.location.href = '/courses/new?tab=presets';
         } else {
           window.location.href = '/courses/new';
         }
@@ -225,39 +264,51 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             </Link>
 
             {/* Course Switcher Pill */}
-            {courses.length > 0 && (
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 hover:border-indigo-300 bg-white text-xs font-medium text-verba-ink transition-colors shadow-2xs"
-                  aria-label="Přepnout kurz"
-                >
-                  <BookOpen className="w-3.5 h-3.5 text-verba-indigo shrink-0" />
-                  <span className="truncate max-w-[90px] xs:max-w-[140px] sm:max-w-[200px]">
-                    {currentCourse
-                      ? `${currentCourse.target_language.toUpperCase()} • ${currentCourse.domain_area}`
-                      : 'Vyberte kurz'}
-                  </span>
-                  <ChevronDown className="w-3 h-3 text-verba-slate shrink-0" />
-                </button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 hover:border-indigo-300 bg-white text-xs font-medium text-verba-ink transition-colors shadow-2xs"
+                aria-label="Přepnout kurz"
+              >
+                <BookOpen className="w-3.5 h-3.5 text-verba-indigo shrink-0" />
+                <span className="truncate max-w-[90px] xs:max-w-[140px] sm:max-w-[200px]">
+                  {currentCourse
+                    ? `${currentCourse.target_language.toUpperCase()} • ${currentCourse.domain_area}`
+                    : 'Vyberte kurz'}
+                </span>
+                <ChevronDown className="w-3 h-3 text-verba-slate shrink-0" />
+              </button>
 
-                {isDropdownOpen && (
-                  <>
-                    {/* Backdrop to close on tap outside */}
-                    <div 
-                      className="fixed inset-0 z-40" 
-                      onClick={() => setIsDropdownOpen(false)} 
-                    />
-                    <div
-                      className="absolute left-0 mt-1.5 w-76 max-w-[90vw] bg-white rounded-xl shadow-xl border border-slate-100 py-1.5 z-50 animate-in fade-in slide-in-from-top-1"
-                    >
-                      <div className="px-3 py-1.5 text-[10px] font-semibold text-verba-slate uppercase tracking-wider flex items-center justify-between border-b border-slate-50 pb-1.5 mb-1">
-                        <span>Moje kurzy ({courses.length})</span>
-                        <span className="text-[9px] text-verba-indigo font-normal">Kliknutím přepnete</span>
-                      </div>
-                      <div className="max-h-72 overflow-y-auto divide-y divide-slate-50">
-                        {courses.map((c) => {
+              {isDropdownOpen && (
+                <>
+                  {/* Backdrop to close on tap outside */}
+                  <div 
+                    className="fixed inset-0 z-40" 
+                    onClick={() => setIsDropdownOpen(false)} 
+                  />
+                  <div
+                    className="absolute left-0 mt-1.5 w-80 max-w-[90vw] bg-white rounded-xl shadow-xl border border-slate-100 py-1.5 z-50 animate-in fade-in slide-in-from-top-1"
+                  >
+                    <div className="px-3 py-1.5 text-[10px] font-semibold text-verba-slate uppercase tracking-wider flex items-center justify-between border-b border-slate-50 pb-1.5 mb-1">
+                      <span>Mé kurzy ({openedCourses.length})</span>
+                      <span className="text-[9px] text-verba-indigo font-normal">Aktuálně otevřené</span>
+                    </div>
+
+                    <div className="max-h-72 overflow-y-auto divide-y divide-slate-50">
+                      {openedCourses.length === 0 ? (
+                        <div className="px-3 py-5 text-center text-xs text-slate-400 space-y-2">
+                          <p>Nemáte otevřený žádný kurz.</p>
+                          <Link
+                            href="/courses/new?tab=presets"
+                            onClick={() => setIsDropdownOpen(false)}
+                            className="inline-block text-xs font-semibold text-verba-indigo hover:underline"
+                          >
+                            Otevřít z předpřipravených &rarr;
+                          </Link>
+                        </div>
+                      ) : (
+                        openedCourses.map((c) => {
                           const isSelected = c.id === currentCourse?.id;
                           return (
                             <div
@@ -293,31 +344,55 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                 </span>
                               </Link>
 
-                              {/* Delete course button */}
-                              <button
-                                type="button"
-                                onClick={(e) => handleDeleteCourse(c.id, c.domain_area, e)}
-                                className="p-1 rounded-md text-slate-300 hover:text-verba-error hover:bg-rose-50 transition-colors opacity-80 sm:opacity-0 group-hover:opacity-100 shrink-0"
-                                title={`Smazat kurz ${c.domain_area}`}
-                                aria-label={`Smazat kurz ${c.domain_area}`}
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                              <div className="flex items-center gap-1 shrink-0">
+                                {/* Close course button (removes from Mé kurzy, keeps in catalog) */}
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleCloseCourse(c.id, e)}
+                                  className="p-1 rounded-md text-slate-400 hover:text-amber-700 hover:bg-amber-50 transition-colors"
+                                  title={`Zavřít kurz „${c.domain_area}“ (zůstane v Předpřipravených kurzech)`}
+                                  aria-label={`Zavřít kurz ${c.domain_area}`}
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+
+                                {/* Permanent delete button */}
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleDeleteCourse(c.id, c.domain_area, e)}
+                                  className="p-1 rounded-md text-slate-400 hover:text-verba-error hover:bg-rose-50 transition-colors"
+                                  title={`Trvale smazat kurz „${c.domain_area}“`}
+                                  aria-label={`Trvale smazat kurz ${c.domain_area}`}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             </div>
                           );
-                        })}
-                      </div>
-                      <div className="border-t border-slate-100 mt-1 pt-1 space-y-0.5">
-                        <Link
-                          href="/courses/new"
-                          onClick={() => setIsDropdownOpen(false)}
-                          className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-verba-indigo hover:bg-indigo-50 transition-colors rounded-md"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>Nový kurz z GPT</span>
-                        </Link>
+                        })
+                      )}
+                    </div>
 
-                        <div className="border-t border-slate-100 my-1"></div>
+                    <div className="border-t border-slate-100 mt-1 pt-1 space-y-0.5">
+                      <Link
+                        href="/courses/new?tab=presets"
+                        onClick={() => setIsDropdownOpen(false)}
+                        className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-700 hover:text-verba-indigo hover:bg-indigo-50/60 transition-colors rounded-md"
+                      >
+                        <BookOpen className="w-3.5 h-3.5 text-verba-indigo" />
+                        <span>Předpřipravené kurzy (katalog)</span>
+                      </Link>
+
+                      <Link
+                        href="/courses/new?tab=import"
+                        onClick={() => setIsDropdownOpen(false)}
+                        className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-verba-indigo hover:bg-indigo-50 transition-colors rounded-md"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Nový kurz z GPT</span>
+                      </Link>
+
+                      <div className="border-t border-slate-100 my-1"></div>
 
                         <a
                           href="/api/courses/backup"
@@ -346,8 +421,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                   </>
                 )}
               </div>
-            )}
-          </div>
+            </div>
 
           <div className="flex items-center gap-2 shrink-0">
             {/* Mobile QR Button */}
@@ -410,59 +484,84 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-bold text-verba-slate uppercase tracking-wider">
-                    Moje kurzy
+                    Mé kurzy ({openedCourses.length})
                   </span>
                   <Link
-                    href="/courses/new"
+                    href="/courses/new?tab=presets"
                     onClick={() => setIsMobileDrawerOpen(false)}
                     className="text-[11px] font-semibold text-verba-indigo hover:underline flex items-center gap-1"
                   >
-                    <Plus className="w-3 h-3" />
-                    <span>Nový kurz</span>
+                    <BookOpen className="w-3 h-3" />
+                    <span>Katalog kurzů</span>
                   </Link>
                 </div>
 
                 <div className="space-y-1">
-                  {courses.map((c) => {
-                    const isSelected = c.id === currentCourse?.id;
-                    return (
-                      <div
-                        key={c.id}
-                        className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-colors ${
-                          isSelected
-                            ? 'bg-indigo-50 text-verba-indigo font-bold shadow-xs'
-                            : 'hover:bg-slate-50 text-verba-ink'
-                        }`}
+                  {openedCourses.length === 0 ? (
+                    <div className="py-4 text-center text-xs text-slate-400 space-y-1">
+                      <p>Nemáte otevřený žádný kurz.</p>
+                      <Link
+                        href="/courses/new?tab=presets"
+                        onClick={() => setIsMobileDrawerOpen(false)}
+                        className="text-xs font-semibold text-verba-indigo hover:underline"
                       >
-                        <Link
-                          href={`/courses/${c.id}`}
-                          onClick={() => {
-                            setCurrentCourse(c);
-                            markCourseAsOpened(c.id, c);
-                            setIsMobileDrawerOpen(false);
-                          }}
-                          className="flex-1 truncate pr-2 flex items-center gap-1.5"
+                        Vybrat kurz z katalogu &rarr;
+                      </Link>
+                    </div>
+                  ) : (
+                    openedCourses.map((c) => {
+                      const isSelected = c.id === currentCourse?.id;
+                      return (
+                        <div
+                          key={c.id}
+                          className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-colors ${
+                            isSelected
+                              ? 'bg-indigo-50 text-verba-indigo font-bold shadow-xs'
+                              : 'hover:bg-slate-50 text-verba-ink'
+                          }`}
                         >
-                          {isSelected && (
-                            <Check className="w-3.5 h-3.5 text-verba-indigo shrink-0 stroke-[2.5]" />
-                          )}
-                          <span className="mr-1">{c.target_language.toUpperCase()} •</span>
-                          <span>{c.domain_area}</span>
-                          <span className="text-[10px] text-verba-slate ml-1.5 font-normal">
-                            ({c.completed_lessons_count || 50}/{c.total_lessons || 50})
-                          </span>
-                        </Link>
-                        <button
-                          type="button"
-                          onClick={(e) => handleDeleteCourse(c.id, c.domain_area, e)}
-                          className="p-1 text-slate-300 hover:text-verba-error rounded transition-colors"
-                          title="Smazat kurz"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    );
-                  })}
+                          <Link
+                            href={`/courses/${c.id}`}
+                            onClick={() => {
+                              setCurrentCourse(c);
+                              markCourseAsOpened(c.id, c);
+                              setIsMobileDrawerOpen(false);
+                            }}
+                            className="flex-1 truncate pr-2 flex items-center gap-1.5"
+                          >
+                            {isSelected && (
+                              <Check className="w-3.5 h-3.5 text-verba-indigo shrink-0 stroke-[2.5]" />
+                            )}
+                            <span className="mr-1">{c.target_language.toUpperCase()} •</span>
+                            <span>{c.domain_area}</span>
+                            <span className="text-[10px] text-verba-slate ml-1.5 font-normal">
+                              ({c.completed_lessons_count || 50}/{c.total_lessons || 50})
+                            </span>
+                          </Link>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={(e) => handleCloseCourse(c.id, e)}
+                              className="p-1 text-slate-400 hover:text-amber-700 hover:bg-amber-50 rounded transition-colors"
+                              title={`Zavřít kurz „${c.domain_area}“ (zůstane v Předpřipravených kurzech)`}
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={(e) => handleDeleteCourse(c.id, c.domain_area, e)}
+                              className="p-1 text-slate-400 hover:text-verba-error hover:bg-rose-50 rounded transition-colors"
+                              title={`Trvale smazat kurz „${c.domain_area}“`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               </div>
 

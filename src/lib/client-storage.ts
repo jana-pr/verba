@@ -278,7 +278,7 @@ export function getAllMergedCourses(serverCourses: any[] = []): any[] {
 }
 
 // ==========================================
-// 4. OPENED COURSES TRACKING
+// 4. OPENED COURSES TRACKING ("MÉ KURZY")
 // ==========================================
 
 export function getOpenedCourseIds(): string[] {
@@ -287,18 +287,19 @@ export function getOpenedCourseIds(): string[] {
 
   try {
     const raw = localStorage.getItem(OPENED_COURSES_KEY);
-    if (raw) {
+    if (raw !== null) {
       const list: string[] = JSON.parse(raw);
-      const clean = list.filter((id) => !deletedIds.has(id));
-      if (clean.length > 0) return clean;
+      if (Array.isArray(list)) {
+        return list.filter((id) => !deletedIds.has(id));
+      }
     }
   } catch {
-    // Fall through to defaults
+    // Fall through to default setup
   }
 
-  // Default initial set of opened courses: all non-deleted presets
+  // Initial default: all non-deleted preset courses are opened initially
   const defaults = DEFAULT_PRESET_COURSES.map((c) => c.id).filter((id) => !deletedIds.has(id));
-  if (typeof window !== 'undefined' && defaults.length > 0) {
+  if (typeof window !== 'undefined') {
     localStorage.setItem(OPENED_COURSES_KEY, JSON.stringify(defaults));
   }
   return defaults;
@@ -313,7 +314,7 @@ export function markCourseAsOpened(courseId: string, fullCourseData?: any) {
     // 1. Remember last active course
     localStorage.setItem(ACTIVE_COURSE_KEY, courseId);
 
-    // 2. Track opened courses list (keep current course at the top)
+    // 2. Track opened courses list ("Mé kurzy" - keep current course at the top)
     const opened = getOpenedCourseIds().filter((id) => id !== courseId);
     opened.unshift(courseId);
     localStorage.setItem(OPENED_COURSES_KEY, JSON.stringify(opened));
@@ -329,28 +330,53 @@ export function markCourseAsOpened(courseId: string, fullCourseData?: any) {
       }
       saveClientVault(vault);
     }
+
+    // 4. Dispatch update notification
+    window.dispatchEvent(new Event('courses-updated'));
   } catch (e) {
     console.warn('Error marking course as opened:', e);
   }
 }
 
 /**
- * Returns only the courses that the user has explicitly opened or has active
+ * Closes course from "Mé kurzy" (does NOT delete from DB or catalog)
+ */
+export function markCourseAsClosed(courseId: string): string[] {
+  if (typeof window === 'undefined' || !courseId) return [];
+
+  try {
+    const opened = getOpenedCourseIds().filter((id) => id !== courseId);
+    localStorage.setItem(OPENED_COURSES_KEY, JSON.stringify(opened));
+
+    // If active course was closed, switch active to the next remaining course
+    if (getLastActiveCourseId() === courseId) {
+      if (opened.length > 0) {
+        localStorage.setItem(ACTIVE_COURSE_KEY, opened[0]);
+      } else {
+        localStorage.removeItem(ACTIVE_COURSE_KEY);
+      }
+    }
+
+    // Dispatch update notification
+    window.dispatchEvent(new Event('courses-updated'));
+    return opened;
+  } catch (e) {
+    console.warn('Error marking course as closed:', e);
+    return [];
+  }
+}
+
+/**
+ * Returns only the courses that the user currently has open in "Mé kurzy"
  */
 export function getOpenedCourses(allMergedCourses?: any[]): any[] {
   const all = allMergedCourses || getAllMergedCourses();
   const openedIds = getOpenedCourseIds();
 
-  // Return courses ordered as in openedIds
   const ordered: any[] = [];
   for (const id of openedIds) {
     const found = all.find((c) => c.id === id);
     if (found) ordered.push(found);
-  }
-
-  // If none matched, fallback to all available non-deleted courses
-  if (ordered.length === 0) {
-    return all;
   }
 
   return ordered;

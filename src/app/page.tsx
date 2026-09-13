@@ -19,14 +19,15 @@ import {
   BookA
 } from 'lucide-react';
 
-import { getLastActiveCourseId, markCourseAsOpened, getAllMergedCourses } from '@/lib/client-storage';
+import { getLastActiveCourseId, markCourseAsOpened, getAllMergedCourses, getOpenedCourses } from '@/lib/client-storage';
 
 export default function HomePage() {
   const [courses, setCourses] = useState<Course[]>(() => getAllMergedCourses());
   const [activeCourse, setActiveCourse] = useState<Course | null>(() => {
     const all = getAllMergedCourses();
+    const opened = getOpenedCourses(all);
     const savedId = getLastActiveCourseId();
-    return (savedId && all.find(c => c.id === savedId)) || all[0] || null;
+    return (savedId && all.find((c) => c.id === savedId)) || opened[0] || all[0] || null;
   });
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [outline, setOutline] = useState<any[]>([]);
@@ -43,10 +44,14 @@ export default function HomePage() {
         setCourses(merged);
 
         const savedActiveId = getLastActiveCourseId();
-        const targetCourse = (savedActiveId && merged.find((c) => c.id === savedActiveId)) || merged[0];
+        const opened = getOpenedCourses(merged);
+        const targetCourse = (savedActiveId && merged.find((c) => c.id === savedActiveId)) || opened[0] || merged[0] || null;
+        setActiveCourse(targetCourse);
+
         if (targetCourse) {
-          setActiveCourse(targetCourse);
-          markCourseAsOpened(targetCourse.id, targetCourse);
+          if (opened.some((c) => c.id === targetCourse.id)) {
+            markCourseAsOpened(targetCourse.id, targetCourse);
+          }
 
           // Fetch full course data including lessons & outline
           try {
@@ -96,8 +101,8 @@ export default function HomePage() {
     );
   }
 
-  // If user has no courses yet, display onboarding CTA
-  if (courses.length === 0) {
+  // If user has no active or opened courses, display CTA to open from catalog or import
+  if (!activeCourse || courses.length === 0) {
     return (
       <AppLayout>
         <div className="max-w-xl mx-auto py-12 text-center space-y-6">
@@ -109,17 +114,23 @@ export default function HomePage() {
               Vítejte v aplikaci VERBA
             </h1>
             <p className="text-xs sm:text-sm text-verba-slate max-w-md mx-auto">
-              Osobní learning environment pro cílené studium odborného cizího jazyka. 
-              Understand it. Recall it. Use it.
+              Nemáte právě otevřený žádný aktivní kurz v „Mých kurzech“. Vyberte si předpřipravený kurz z katalogu nebo vložte nový kurz z GPT.
             </p>
           </div>
-          <div className="pt-2">
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
             <Link
-              href="/courses/new"
+              href="/courses/new?tab=presets"
               className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-verba-indigo hover:bg-verba-indigo-dark text-white font-semibold text-sm shadow-md transition-all active:scale-95"
             >
+              <BookOpen className="w-4 h-4" />
+              <span>Předpřipravené kurzy (katalog)</span>
+            </Link>
+            <Link
+              href="/courses/new?tab=import"
+              className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl border border-indigo-200 bg-white hover:bg-indigo-50 text-verba-indigo font-semibold text-sm transition-all"
+            >
               <PlusCircle className="w-4 h-4" />
-              <span>Vložit nebo vytvořit nový kurz</span>
+              <span>Vložit nový kurz z GPT</span>
             </Link>
           </div>
         </div>

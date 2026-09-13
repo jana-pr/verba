@@ -13,7 +13,8 @@ import {
   BarChart3, 
   PlusCircle, 
   CheckSquare,
-  QrCode
+  QrCode,
+  BookOpen
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -35,6 +36,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentCourseId, onOpenQr }) =
           { label: 'Můj progress', href: `/courses/${currentCourseId}/progress`, icon: BarChart3 },
         ]
       : []),
+    { label: 'Katalog kurzů', href: '/courses/new?tab=presets', icon: BookOpen },
   ];
 
   return (
