@@ -9,8 +9,6 @@ export async function GET() {
     const stmt = db.prepare(`
       SELECT * FROM courses 
       WHERE user_id = ? 
-        AND completed_lessons_count > 0 
-        AND status IN ('ready', 'generating')
       ORDER BY created_at DESC
     `);
     const courses = stmt.all(DEFAULT_USER_ID);

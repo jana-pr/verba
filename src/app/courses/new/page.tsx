@@ -17,7 +17,8 @@ import {
   CheckCircle2,
   HelpCircle,
   Layers,
-  FileText
+  FileText,
+  Trash2
 } from 'lucide-react';
 
 export default function NewCoursePage() {
@@ -25,6 +26,32 @@ export default function NewCoursePage() {
 
   // Active Tab: 'import' (paste json) | 'prompt' (export prompt) | 'presets' (predefined courses)
   const [activeTab, setActiveTab] = useState<'import' | 'prompt' | 'presets'>('import');
+
+  // Dynamic prepared courses from DB
+  const [preparedCourses, setPreparedCourses] = useState<any[]>([]);
+  const [loadingPresets, setLoadingPresets] = useState(true);
+
+  const fetchPreparedCourses = async () => {
+    try {
+      const res = await fetch('/api/courses');
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setPreparedCourses(data);
+      }
+    } catch (e) {
+      console.error('Error fetching prepared courses:', e);
+    } finally {
+      setLoadingPresets(false);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchPreparedCourses();
+
+    const handleUpdate = () => fetchPreparedCourses();
+    window.addEventListener('courses-updated', handleUpdate);
+    return () => window.removeEventListener('courses-updated', handleUpdate);
+  }, []);
 
   // Prompt Generator State
   const [targetLanguage, setTargetLanguage] = useState('en');
@@ -107,12 +134,36 @@ export default function NewCoursePage() {
       }
 
       setImportSuccess(data.message || 'Kurz byl úspěšně vytvořen!');
+      window.dispatchEvent(new Event('courses-updated'));
+      fetchPreparedCourses();
+
       setTimeout(() => {
         router.push(`/courses/${data.courseId}`);
       }, 1000);
     } catch (err: any) {
       setImportError(err.message || 'Nepodařilo se naimportovat kurz.');
       setIsImporting(false);
+    }
+  };
+
+  const handleDeletePreset = async (courseId: string, domainArea: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    if (!confirm(`Opravdu chcete smazat předpřipravený kurz „${domainArea}“? Všechna data kurzu budou nenávratně odstraněna.`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/courses/${courseId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setPreparedCourses((prev) => prev.filter((c) => c.id !== courseId));
+        window.dispatchEvent(new Event('courses-updated'));
+      } else {
+        alert('Chyba při mazání kurzu.');
+      }
+    } catch (err) {
+      console.error('Error deleting preset course:', err);
     }
   };
 
@@ -564,41 +615,85 @@ export default function NewCoursePage() {
         {/* TAB 3: PREPARED COURSES */}
         {activeTab === 'presets' && (
           <div className="space-y-3">
-            <div className="verba-card p-4 space-y-3">
-              <h2 className="text-sm font-bold text-verba-ink">
-                Předpřipravené profesionální kurzy
-              </h2>
-              <p className="text-xs text-verba-slate">
-                Všechny tyto kurzy jsou kompletně připravené k okamžitému studiu s 50 unikátními lekcemi a cvičeními:
-              </p>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                {[
-                  { id: 'crs_project_management_b2', title: 'Project Management', lang: 'EN', level: 'B2', desc: 'Řízení projektů, harmonogramy, stakeholder management a WBS.' },
-                  { id: 'crs_software_engineering_b2', title: 'Software Engineering', lang: 'EN', level: 'B2', desc: 'Softwarová architektura, clean code, code reviews a CI/CD.' },
-                  { id: 'crs_product_management_b2', title: 'Product Management', lang: 'EN', level: 'B2', desc: 'Produktová vize, user research, roadmapy a metriky (AARRR).' },
-                  { id: 'crs_business_analyst_b2', title: 'Business analýza', lang: 'EN', level: 'B2', desc: 'Požadavky, procesní modelování BPMN a specifikace.' },
-                ].map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => router.push(`/courses/${c.id}`)}
-                    className="p-3 rounded-xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/30 text-left transition-all group"
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-bold text-xs text-verba-ink group-hover:text-verba-indigo">
-                        {c.title}
-                      </span>
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-verba-slate">
-                        {c.lang} • {c.level}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-verba-slate line-clamp-2">
-                      {c.desc}
-                    </p>
-                  </button>
-                ))}
+            <div className="verba-card p-4 sm:p-5 space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                <div>
+                  <h2 className="text-sm font-bold text-verba-ink">
+                    Předpřipravené a uložené kurzy ({preparedCourses.length})
+                  </h2>
+                  <p className="text-xs text-verba-slate mt-0.5">
+                    Všechny hotové a naimportované kurzy připravené ke studiu. Každý kurz můžete přímo otevřít nebo trvale smazat.
+                  </p>
+                </div>
               </div>
+
+              {loadingPresets ? (
+                <div className="py-8 text-center text-xs text-verba-slate">
+                  Načítání předpřipravených kurzů...
+                </div>
+              ) : preparedCourses.length === 0 ? (
+                <div className="py-8 text-center text-xs text-verba-slate space-y-2">
+                  <p>Zatím nemáte žádné předpřipravené kurzy.</p>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('import')}
+                    className="text-verba-indigo font-semibold hover:underline"
+                  >
+                    Vložit kurz z GPT &rarr;
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                  {preparedCourses.map((c) => (
+                    <div
+                      key={c.id}
+                      className="p-3.5 rounded-xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/20 transition-all flex flex-col justify-between gap-3 group relative bg-white"
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-2 mb-1">
+                          <div className="font-bold text-xs text-verba-ink group-hover:text-verba-indigo line-clamp-1">
+                            {c.domain_area}
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-verba-slate uppercase">
+                              {c.target_language} • {c.cefr_level}
+                            </span>
+                            {c.id.startsWith('crs_gpt_') && (
+                              <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-purple-100 text-purple-700">
+                                GPT
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <p className="text-[11px] text-verba-slate">
+                          {c.completed_lessons_count} {c.completed_lessons_count === 1 ? 'lekce' : c.completed_lessons_count < 5 ? 'lekce' : 'lekcí'} připraveno ke studiu
+                        </p>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-100/80">
+                        <button
+                          type="button"
+                          onClick={() => router.push(`/courses/${c.id}`)}
+                          className="text-xs font-semibold text-verba-indigo hover:text-verba-indigo-dark flex items-center gap-1"
+                        >
+                          <span>Otevřít kurz</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeletePreset(c.id, c.domain_area, e)}
+                          className="p-1.5 rounded-lg text-slate-300 hover:text-verba-error hover:bg-rose-50 transition-colors"
+                          title={`Smazat předpřipravený kurz ${c.domain_area}`}
+                          aria-label={`Smazat předpřipravený kurz ${c.domain_area}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}

@@ -72,6 +72,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     };
 
     fetchAndSyncCourses();
+
+    const handleCoursesUpdated = () => {
+      fetchAndSyncCourses();
+    };
+    window.addEventListener('courses-updated', handleCoursesUpdated);
+    return () => window.removeEventListener('courses-updated', handleCoursesUpdated);
   }, [activeCourseId]);
 
   const handleImportBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -90,6 +96,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
       if (res.ok) {
         alert('Záloha byla úspěšně obnovena!');
+        window.dispatchEvent(new Event('courses-updated'));
         window.location.reload();
       } else {
         const err = await res.json();
@@ -118,6 +125,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       const res = await fetch(`/api/courses/${courseId}`, { method: 'DELETE' });
       if (res.ok) {
         setCourses((prev) => prev.filter((c) => c.id !== courseId));
+        window.dispatchEvent(new Event('courses-updated'));
         if (currentCourse?.id === courseId) {
           window.location.href = '/';
         }
@@ -202,7 +210,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                             <span className="text-verba-slate">{c.domain_area}</span>
                           </div>
                           <span className="text-[10px] text-verba-slate shrink-0 ml-2">
-                            {c.completed_lessons_count}/50
+                            {c.completed_lessons_count}/{c.total_lessons || 50}
                           </span>
                         </Link>
 
@@ -345,6 +353,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                       >
                         <span className="mr-1">{c.target_language.toUpperCase()} •</span>
                         <span>{c.domain_area}</span>
+                        <span className="text-[10px] text-verba-slate ml-1.5 font-normal">
+                          ({c.completed_lessons_count}/{c.total_lessons || 50})
+                        </span>
                       </Link>
                       <button
                         type="button"
