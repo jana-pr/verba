@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { Course } from '@/lib/db/schema';
+import { Course, Lesson } from '@/lib/db/schema';
 import { 
   Dumbbell, 
   BookOpen, 
@@ -14,14 +14,19 @@ import {
   Sparkles, 
   PlusCircle,
   TrendingUp,
-  Brain
+  Brain,
+  ChevronRight,
+  BookA
 } from 'lucide-react';
 
 export default function HomePage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [activeCourse, setActiveCourse] = useState<Course | null>(null);
+  const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [outline, setOutline] = useState<any[]>([]);
   const [progressData, setProgressData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [lessonFilter, setLessonFilter] = useState<'all' | 'milestones'>('all');
 
   useEffect(() => {
     fetch('/api/courses')
@@ -32,10 +37,24 @@ export default function HomePage() {
           const first = data[0];
           setActiveCourse(first);
 
+          // Fetch full course data including lessons & outline
+          try {
+            const courseRes = await fetch(`/api/courses/${first.id}`);
+            const courseData = await courseRes.json();
+            if (courseData.lessons) setLessons(courseData.lessons);
+            if (courseData.outline) setOutline(courseData.outline);
+          } catch (e) {
+            console.error('Error fetching course lessons:', e);
+          }
+
           if (first.status === 'ready' || first.completed_lessons_count > 0) {
-            const progRes = await fetch(`/api/courses/${first.id}/progress`);
-            const prog = await progRes.json();
-            setProgressData(prog);
+            try {
+              const progRes = await fetch(`/api/courses/${first.id}/progress`);
+              const prog = await progRes.json();
+              setProgressData(prog);
+            } catch (e) {
+              console.error('Error fetching progress:', e);
+            }
           }
         }
         setLoading(false);
@@ -68,7 +87,7 @@ export default function HomePage() {
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-verba-ink">
               Vítejte v aplikaci VERBA
             </h1>
-            <p className="text-sm sm:text-base text-verba-slate max-w-md mx-auto">
+            <p className="text-xs sm:text-sm text-verba-slate max-w-md mx-auto">
               Osobní learning environment pro cílené studium odborného cizího jazyka. 
               Understand it. Recall it. Use it.
             </p>
@@ -79,7 +98,7 @@ export default function HomePage() {
               className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-verba-indigo hover:bg-verba-indigo-dark text-white font-semibold text-sm shadow-md transition-all active:scale-95"
             >
               <PlusCircle className="w-4 h-4" />
-              <span>Vytvořit svůj první odborný kurz</span>
+              <span>Vložit nebo vytvořit nový kurz</span>
             </Link>
           </div>
         </div>
@@ -91,255 +110,234 @@ export default function HomePage() {
   const isRecallLagging =
     progressData && progressData.comprehensionPercent > progressData.activeRecallPercent + 10;
 
+  // Combine outline and generated lessons
+  const totalCount = 50;
+  const allLessons = Array.from({ length: totalCount }, (_, i) => {
+    const num = i + 1;
+    const generated = lessons.find((l) => l.lesson_number === num);
+    const outlineItem = outline.find((o) => o.lesson_number === num);
+    const isCheckpoint = num % 10 === 0;
+
+    return {
+      number: num,
+      title: generated?.title || outlineItem?.title || `Lekce ${num}`,
+      theme_focus: generated?.theme_focus || outlineItem?.theme_focus || '',
+      isCheckpoint,
+    };
+  });
+
+  const displayedLessons = lessonFilter === 'milestones'
+    ? allLessons.filter(l => l.isCheckpoint)
+    : allLessons;
+
   return (
     <AppLayout activeCourseId={activeCourse?.id}>
-      <div className="space-y-6">
-        {/* Top Greeting & Intent: "Co mám dnes udělat?" */}
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 border-b border-slate-200/60 pb-4">
-          <div>
-            <span className="text-xs font-semibold text-verba-slate uppercase tracking-wider">
-              Dnešní plán
-            </span>
-            <h1 className="text-2xl font-bold text-verba-ink tracking-tight">
-              Co máte dnes udělat?
-            </h1>
-          </div>
-          <div className="text-xs font-medium text-verba-slate">
-            Aktivní kurz: <span className="font-semibold text-verba-ink">{activeCourse?.target_language.toUpperCase()} • {activeCourse?.cefr_level} {activeCourse?.domain_area}</span>
-          </div>
-        </div>
-
-        {/* If course is still in generation or outline phase */}
-        {activeCourse?.status === 'outline_pending' && (
-          <div className="verba-card p-6 border-amber-200 bg-amber-50/40 space-y-4">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 text-verba-review shrink-0 mt-0.5" />
-              <div>
-                <h3 className="text-sm font-semibold text-verba-ink">Osnova kurzu čeká na Vaše schválení</h3>
-                <p className="text-xs text-verba-slate mt-1">
-                  Před zahájením generování lekcí je nutné zkontrolovat a schválit 50-lekcí curriculum outline.
-                </p>
-              </div>
-            </div>
-            <Link
-              href={`/courses/${activeCourse.id}`}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-verba-indigo text-white text-xs font-medium hover:bg-verba-indigo-dark"
-            >
-              <span>Zkontrolovat a schválit osnovu</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
-        )}
-
-        {activeCourse?.status === 'generating' && (
-          <div className="verba-card p-6 border-indigo-200 bg-indigo-50/30 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-verba-ink">Probíhá generování kurzu</h3>
-                <p className="text-xs text-verba-slate mt-0.5">
-                  Vygenerováno {activeCourse.completed_lessons_count} z 50 lekcí.
-                </p>
-              </div>
-              <Link
-                href={`/courses/${activeCourse.id}/generate`}
-                className="px-3.5 py-1.5 rounded-lg bg-verba-indigo text-white text-xs font-medium hover:bg-verba-indigo-dark"
-              >
-                Otevřít generátor
-              </Link>
-            </div>
-            <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
-              <div
-                className="bg-verba-indigo h-full transition-all"
-                style={{ width: `${(activeCourse.completed_lessons_count / 50) * 100}%` }}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Main CTA Section for ready course */}
+      <div className="space-y-4 sm:space-y-6">
+        {/* COMPACT ACTIVE COURSE HERO & QUICK CTAS */}
         {isReady && activeCourse && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {/* Primary Action Card: Mobile CTA = START PRACTICE */}
-            <div className="md:col-span-2 verba-card p-6 sm:p-7 border-indigo-100 flex flex-col justify-between relative overflow-hidden bg-gradient-to-br from-white via-white to-indigo-50/30">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-50 text-verba-indigo border border-indigo-100 text-xs font-semibold">
-                    <Sparkles className="w-3.5 h-3.5 text-verba-indigo" />
-                    <span>Doporučeno na dnešek</span>
+          <div className="verba-card p-3.5 sm:p-5 border-indigo-100 bg-gradient-to-br from-white via-white to-indigo-50/30">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-verba-indigo font-bold text-[10px] sm:text-xs border border-indigo-100 uppercase">
+                    {activeCourse.target_language} • {activeCourse.cefr_level}
                   </span>
-                  <span className="text-xs text-verba-slate font-medium">
-                    ~10–15 minut
+                  <span className="text-[11px] font-semibold text-verba-slate truncate">
+                    {activeCourse.domain_area}
                   </span>
                 </div>
-
-                <div>
-                  <h2 className="text-xl sm:text-2xl font-bold text-verba-ink">
-                    Denní procvičování (Practice)
-                  </h2>
-                  <p className="text-xs sm:text-sm text-verba-slate mt-1 max-w-lg">
-                    Cílené upevnění odborné slovní zásoby a frází. Algoritmus automaticky vybral položky, které vyžadují pozornost.
-                  </p>
-                </div>
-
-                {/* Recall vs Comprehension Alert */}
-                {isRecallLagging && (
-                  <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-50/80 border border-amber-200 text-xs text-amber-900">
-                    <AlertTriangle className="w-4 h-4 text-verba-review shrink-0 mt-0.5" />
-                    <div>
-                      <span className="font-semibold">Upozornění na slabší směr: </span>
-                      Tomuto obsahu dobře rozumíte pasivně, ale aktivní produkce (CZ → EN) zaostává. Dnešní cvičení preferuje aktivní vybavení.
-                    </div>
-                  </div>
-                )}
+                <h1 className="text-base sm:text-xl font-bold text-verba-ink tracking-tight truncate">
+                  Lekce 1: {allLessons[0]?.title || 'Základní lekce'}
+                </h1>
+                <p className="text-[11px] sm:text-xs text-verba-slate truncate mt-0.5">
+                  {allLessons[0]?.theme_focus || 'Začněte studium odborné terminologie'}
+                </p>
               </div>
 
-              {/* CTAs: Mobile Primary = Start Practice; Secondary = Continue Learning */}
-              <div className="pt-6 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                <Link
-                  href={`/courses/${activeCourse.id}/practice`}
-                  className="flex-1 py-3.5 px-6 rounded-xl bg-verba-indigo hover:bg-verba-indigo-dark text-white font-semibold text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 active:scale-98"
-                >
-                  <Dumbbell className="w-4 h-4" />
-                  <span>START PRACTICE</span>
-                </Link>
-
+              {/* Quick Actions (Compact) */}
+              <div className="flex items-center gap-2 shrink-0 pt-1 sm:pt-0">
                 <Link
                   href={`/courses/${activeCourse.id}/lessons/1`}
-                  className="py-3 px-5 rounded-xl border border-slate-200 hover:border-indigo-200 bg-white text-verba-ink hover:text-verba-indigo font-medium text-xs sm:text-sm transition-colors flex items-center justify-center gap-2"
+                  className="flex-1 sm:flex-initial py-2 px-3.5 rounded-xl bg-verba-indigo hover:bg-verba-indigo-dark text-white font-semibold text-xs shadow-xs transition-all flex items-center justify-center gap-1.5 active:scale-98"
                 >
-                  <BookOpen className="w-4 h-4 text-verba-slate" />
-                  <span>Pokračovat v lekcích</span>
+                  <BookOpen className="w-3.5 h-3.5" />
+                  <span>Otevřít lekci 1</span>
+                </Link>
+
+                <Link
+                  href={`/courses/${activeCourse.id}/practice`}
+                  className="flex-1 sm:flex-initial py-2 px-3.5 rounded-xl border border-indigo-200 bg-indigo-50/60 hover:bg-indigo-100/60 text-verba-indigo font-semibold text-xs transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <Dumbbell className="w-3.5 h-3.5" />
+                  <span>START PRACTICE</span>
                 </Link>
               </div>
             </div>
 
-            {/* Quick Metrics Card */}
-            <div className="verba-card p-6 flex flex-col justify-between space-y-6">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-verba-slate uppercase tracking-wider">
-                    Postup kurzem
-                  </span>
-                  <Link
-                    href={`/courses/${activeCourse.id}/progress`}
-                    className="text-[11px] font-semibold text-verba-indigo hover:underline flex items-center gap-1"
-                  >
-                    <span>Detail</span>
-                    <ArrowRight className="w-3 h-3" />
-                  </Link>
-                </div>
+            {/* Active Recall Alert (Compact if active) */}
+            {isRecallLagging && (
+              <div className="mt-3 flex items-center gap-2 p-2 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-900">
+                <AlertTriangle className="w-3.5 h-3.5 text-verba-review shrink-0" />
+                <span className="truncate">
+                  Aktivní produkce (CZ→EN) zaostává za porozuměním. Dnešní nácvik upřednostňuje aktivní recall.
+                </span>
+              </div>
+            )}
+          </div>
+        )}
 
-                <div className="space-y-3">
-                  <div>
-                    <div className="flex justify-between text-xs font-medium mb-1">
-                      <span className="text-verba-slate">Dokončené lekce</span>
-                      <span className="font-bold text-verba-ink">
-                        {activeCourse.completed_lessons_count} / 50
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                      <div
-                        className="bg-verba-teal h-full rounded-full"
-                        style={{
-                          width: `${Math.min(100, (activeCourse.completed_lessons_count / 50) * 100)}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between text-xs font-medium mb-1">
-                      <span className="text-verba-slate">Celkové Mastery</span>
-                      <span className="font-bold text-verba-mastered">
-                        {progressData?.masteryPercent || 0}%
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                      <div
-                        className="bg-verba-mastered h-full rounded-full"
-                        style={{ width: `${progressData?.masteryPercent || 0}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Bidirectional comparison indicator */}
-                <div className="pt-2 border-t border-slate-100 space-y-2">
-                  <div className="text-[11px] font-semibold text-verba-slate uppercase">
-                    Obousměrná bilance:
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-center">
-                    <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
-                      <div className="text-[10px] text-verba-slate font-medium">
-                        Active Recall (CZ→EN)
-                      </div>
-                      <div className="text-sm font-bold text-verba-teal mt-0.5">
-                        {progressData?.activeRecallPercent || 0}%
-                      </div>
-                    </div>
-                    <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
-                      <div className="text-[10px] text-verba-slate font-medium">
-                        Porozumění (EN→CZ)
-                      </div>
-                      <div className="text-sm font-bold text-verba-indigo mt-0.5">
-                        {progressData?.comprehensionPercent || 0}%
-                      </div>
-                    </div>
-                  </div>
-                </div>
+        {/* PRIMARY FOCUS: KURZ SAMOTNÝ (VŠECH 50 LEKCÍ) */}
+        {isReady && activeCourse && (
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between px-1">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm sm:text-base font-bold text-verba-ink">
+                  Lekce kurzu
+                </h2>
+                <span className="text-[11px] font-medium text-verba-slate">
+                  (50 témat)
+                </span>
               </div>
 
-              <Link
-                href={`/courses/${activeCourse.id}/review`}
-                className="w-full py-2.5 px-3 rounded-xl border border-slate-200 hover:border-indigo-200 text-verba-ink hover:text-verba-indigo font-medium text-xs flex items-center justify-center gap-2 transition-colors"
-              >
-                <RotateCw className="w-3.5 h-3.5" />
-                <span>Spustit Course Review (50/25/25)</span>
-              </Link>
+              {/* Filter pills */}
+              <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[10px] font-medium">
+                <button
+                  type="button"
+                  onClick={() => setLessonFilter('all')}
+                  className={`px-2 py-0.5 rounded-md transition-colors ${
+                    lessonFilter === 'all'
+                      ? 'bg-white text-verba-indigo font-bold shadow-2xs'
+                      : 'text-verba-slate hover:text-verba-ink'
+                  }`}
+                >
+                  Všechny
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLessonFilter('milestones')}
+                  className={`px-2 py-0.5 rounded-md transition-colors ${
+                    lessonFilter === 'milestones'
+                      ? 'bg-white text-verba-review font-bold shadow-2xs'
+                      : 'text-verba-slate hover:text-verba-ink'
+                  }`}
+                >
+                  Milníky (CP 1–5)
+                </button>
+              </div>
+            </div>
+
+            {/* Compact list of lessons */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {displayedLessons.map((item) => (
+                <Link
+                  key={item.number}
+                  href={`/courses/${activeCourse.id}/lessons/${item.number}`}
+                  className={`verba-card p-2.5 sm:p-3 flex items-center justify-between gap-2.5 verba-card-hover transition-all ${
+                    item.isCheckpoint
+                      ? 'border-l-4 border-l-verba-review bg-amber-50/20'
+                      : ''
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${
+                        item.isCheckpoint
+                          ? 'bg-verba-review text-white'
+                          : 'bg-indigo-50 text-verba-indigo'
+                      }`}
+                    >
+                      {item.number}
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <h3 className="text-xs font-bold text-verba-ink truncate">
+                          {item.title}
+                        </h3>
+                        {item.isCheckpoint && (
+                          <span className="text-[9px] font-bold px-1 rounded-sm bg-amber-100 text-verba-review shrink-0">
+                            CP {item.number / 10}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-verba-slate truncate">
+                        {item.theme_focus}
+                      </p>
+                    </div>
+                  </div>
+
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                </Link>
+              ))}
             </div>
           </div>
         )}
 
-        {/* Quick Navigation Cards */}
+        {/* SECONDARY & COMPACT: PŘEHLEDY, BILANCE A NÁSTROJE */}
         {isReady && activeCourse && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
-            <Link
-              href={`/courses/${activeCourse.id}`}
-              className="verba-card p-4 hover:border-indigo-200 transition-all text-left"
-            >
-              <BookOpen className="w-5 h-5 text-verba-indigo mb-2" />
-              <div className="text-xs font-bold text-verba-ink">Seznam lekcí</div>
-              <div className="text-[11px] text-verba-slate mt-0.5">50 témat kurzu</div>
-            </Link>
+          <div className="verba-card p-3 sm:p-4 border-slate-200/80 bg-white space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <span className="text-[11px] font-bold text-verba-slate uppercase tracking-wider">
+                Přehled a bilance
+              </span>
+              <Link
+                href={`/courses/${activeCourse.id}/progress`}
+                className="text-[11px] font-semibold text-verba-indigo hover:underline flex items-center gap-0.5"
+              >
+                <span>Plná analytika</span>
+                <ArrowRight className="w-3 h-3" />
+              </Link>
+            </div>
 
-            <Link
-              href={`/courses/${activeCourse.id}/dictionary`}
-              className="verba-card p-4 hover:border-indigo-200 transition-all text-left"
-            >
-              <BookOpen className="w-5 h-5 text-verba-teal mb-2" />
-              <div className="text-xs font-bold text-verba-ink">Centrální slovník</div>
-              <div className="text-[11px] text-verba-slate mt-0.5">
-                {progressData?.stats?.totalItems || 0} položek
+            {/* Metrics pills */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center select-none">
+              <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
+                <div className="text-[9px] text-verba-slate font-medium">Dokončeno</div>
+                <div className="text-xs font-bold text-verba-ink mt-0.5">
+                  {activeCourse.completed_lessons_count} / 50 lekcí
+                </div>
               </div>
-            </Link>
 
-            <Link
-              href={`/courses/${activeCourse.id}/checkpoints/10`}
-              className="verba-card p-4 hover:border-indigo-200 transition-all text-left"
-            >
-              <CheckCircle2 className="w-5 h-5 text-verba-mastered mb-2" />
-              <div className="text-xs font-bold text-verba-ink">Milník Checkpoint</div>
-              <div className="text-[11px] text-verba-slate mt-0.5">Ověření po 10 lekcích</div>
-            </Link>
+              <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
+                <div className="text-[9px] text-verba-slate font-medium">Celkové Mastery</div>
+                <div className="text-xs font-bold text-verba-mastered mt-0.5">
+                  {progressData?.masteryPercent || 0}%
+                </div>
+              </div>
 
-            <Link
-              href={`/courses/${activeCourse.id}/progress`}
-              className="verba-card p-4 hover:border-indigo-200 transition-all text-left"
-            >
-              <TrendingUp className="w-5 h-5 text-verba-review mb-2" />
-              <div className="text-xs font-bold text-verba-ink">Analytika</div>
-              <div className="text-[11px] text-verba-slate mt-0.5">Slabá místa a grafy</div>
-            </Link>
+              <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
+                <div className="text-[9px] text-verba-slate font-medium">Active Recall (CZ→EN)</div>
+                <div className="text-xs font-bold text-verba-teal mt-0.5">
+                  {progressData?.activeRecallPercent || 0}%
+                </div>
+              </div>
+
+              <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
+                <div className="text-[9px] text-verba-slate font-medium">Porozumění (EN→CZ)</div>
+                <div className="text-xs font-bold text-verba-indigo mt-0.5">
+                  {progressData?.comprehensionPercent || 0}%
+                </div>
+              </div>
+            </div>
+
+            {/* Compact action buttons */}
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <Link
+                href={`/courses/${activeCourse.id}/review`}
+                className="py-2 px-3 rounded-lg border border-slate-200 hover:border-indigo-200 text-verba-ink hover:text-verba-indigo font-medium text-xs flex items-center justify-center gap-1.5 transition-colors text-center"
+              >
+                <RotateCw className="w-3 h-3 text-verba-review" />
+                <span className="truncate">Review (50/25/25)</span>
+              </Link>
+
+              <Link
+                href={`/courses/${activeCourse.id}/dictionary`}
+                className="py-2 px-3 rounded-lg border border-slate-200 hover:border-indigo-200 text-verba-ink hover:text-verba-indigo font-medium text-xs flex items-center justify-center gap-1.5 transition-colors text-center"
+              >
+                <BookA className="w-3 h-3 text-verba-teal" />
+                <span className="truncate">Centrální slovník</span>
+              </Link>
+            </div>
           </div>
         )}
       </div>

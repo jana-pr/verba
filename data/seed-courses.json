@@ -1,6 +1,6 @@
 {
   "version": "1.1",
-  "exportedAt": "2026-09-13T10:50:53.913Z",
+  "exportedAt": "2026-09-13T11:16:38.472Z",
   "courses": [
     {
       "id": "crs_business_analyza_b2",
@@ -57,6 +57,20 @@
       "generation_error": null,
       "created_at": "2026-09-13T10:50:48.879Z",
       "updated_at": "2026-09-13T10:50:48.879Z"
+    },
+    {
+      "id": "crs_gpt_test_stavebnictvi_1789298198430",
+      "user_id": "usr_jana_default",
+      "target_language": "en",
+      "native_language": "cs",
+      "cefr_level": "B2",
+      "domain_area": "Test Stavebnictvi",
+      "status": "ready",
+      "total_lessons": 1,
+      "completed_lessons_count": 1,
+      "generation_error": null,
+      "created_at": "2026-09-13T11:16:38.430Z",
+      "updated_at": "2026-09-13T11:16:38.430Z"
     }
   ],
   "outlines": [
@@ -91,6 +105,14 @@
       "is_approved": 1,
       "approved_at": "2026-09-13T10:50:48.879Z",
       "created_at": "2026-09-13T10:50:48.879Z"
+    },
+    {
+      "id": "out_crs_gpt_test_stavebnictvi_1789298198430",
+      "course_id": "crs_gpt_test_stavebnictvi_1789298198430",
+      "outline_json": "[{\"lesson_number\":1,\"title\":\"Site Inspection & Soil Testing\",\"theme_focus\":\"Geotechnický průzkum staveniště\",\"learning_goal\":\"Osvojení odborné terminologie a frází pro Geotechnický průzkum staveniště\"}]",
+      "is_approved": 1,
+      "approved_at": "2026-09-13T11:16:38.430Z",
+      "created_at": "2026-09-13T11:16:38.430Z"
     }
   ],
   "lessons": [
@@ -2493,6 +2515,18 @@
       "listening_script": "Welcome to Lesson 50 on Checkpoint 5: Comprehensive Engineering Leadership. In today's session, we master executive vocabulary for Závěrečné celkové ověření všech 50 lekcí. Listen attentively to the dialogue and repeat the core expressions with natural business intonation.",
       "status": "completed",
       "created_at": "2026-09-13T10:50:48.879Z"
+    },
+    {
+      "id": "les_crs_gpt_test_stavebnictvi_1789298198430_1",
+      "course_id": "crs_gpt_test_stavebnictvi_1789298198430",
+      "lesson_number": 1,
+      "title": "Site Inspection & Soil Testing",
+      "theme_focus": "Geotechnický průzkum staveniště",
+      "article_title": "Site Testing Basics",
+      "article_body": "A thorough geotechnical inspection must be conducted.",
+      "listening_script": "We are analyzing borehole samples today.",
+      "status": "completed",
+      "created_at": "2026-09-13T11:16:38.430Z"
     }
   ],
   "items": [
@@ -30369,6 +30403,20 @@
       "phonetic_hint": null,
       "audio_url": null,
       "created_at": "2026-09-13T10:50:48.879Z"
+    },
+    {
+      "id": "itm_les_crs_gpt_test_stavebnictvi_1789298198430_1_1",
+      "lesson_id": "les_crs_gpt_test_stavebnictvi_1789298198430_1",
+      "course_id": "crs_gpt_test_stavebnictvi_1789298198430",
+      "item_type": "expression",
+      "target_text": "soil bearing capacity",
+      "czech_text": "únosnost zeminy",
+      "context_note": "Maximální tlak podloží",
+      "example_sentence_target": "The engineer verified soil bearing capacity.",
+      "example_sentence_czech": "Inženýr ověřil únosnost zeminy.",
+      "phonetic_hint": "/sɔɪl/",
+      "audio_url": null,
+      "created_at": "2026-09-13T11:16:38.430Z"
     }
   ],
   "states": [
@@ -62227,6 +62275,22 @@
       "target_to_cz_next_review": null,
       "overall_state": "new",
       "updated_at": "2026-09-13T10:50:48.879Z"
+    },
+    {
+      "id": "st_usr_jana_default_itm_les_crs_gpt_test_stavebnictvi_1789298198430_1_1",
+      "user_id": "usr_jana_default",
+      "learning_item_id": "itm_les_crs_gpt_test_stavebnictvi_1789298198430_1_1",
+      "course_id": "crs_gpt_test_stavebnictvi_1789298198430",
+      "cz_to_target_state": "new",
+      "cz_to_target_streak": 0,
+      "cz_to_target_last_reviewed": null,
+      "cz_to_target_next_review": null,
+      "target_to_cz_state": "new",
+      "target_to_cz_streak": 0,
+      "target_to_cz_last_reviewed": null,
+      "target_to_cz_next_review": null,
+      "overall_state": "new",
+      "updated_at": "2026-09-13T11:16:38.430Z"
     }
   ],
   "exercises": [
@@ -73229,6 +73293,17 @@
       "canonical_answer": "Stakeholders must validate key deliverables before the formal milestone sign-off.",
       "acceptable_synonyms_json": "[\"Stakeholders must validate key deliverables before the formal milestone sign-off.\",\"Stakeholders must validate key deliverables before the formal milestone sign-off\"]",
       "explanation": "Přepis: „Stakeholders must validate key deliverables before the formal milestone sign-off.“"
+    },
+    {
+      "id": "ex_les_crs_gpt_test_stavebnictvi_1789298198430_1_1",
+      "lesson_id": "les_crs_gpt_test_stavebnictvi_1789298198430_1",
+      "exercise_type": "choice",
+      "prompt": "Co znamená soil bearing capacity?",
+      "target_language_context": null,
+      "options_json": "[\"únosnost zeminy\",\"výška lešení\"]",
+      "canonical_answer": "únosnost zeminy",
+      "acceptable_synonyms_json": null,
+      "explanation": "Správná odpověď je únosnost zeminy."
     }
   ],
   "articles": [

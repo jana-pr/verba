@@ -3,306 +3,602 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { CurriculumLessonOutline } from '@/lib/db/schema';
+import { generateGptCoursePrompt } from '@/lib/gpt-course-prompt';
 import { 
   Sparkles, 
+  Copy, 
+  Check, 
+  Download, 
+  Upload, 
   ArrowRight, 
-  CheckCircle2, 
-  BookOpen, 
   AlertCircle,
-  Loader2,
+  FileJson,
+  BookOpen,
+  CheckCircle2,
+  HelpCircle,
   Layers,
-  ChevronRight
+  FileText
 } from 'lucide-react';
 
 export default function NewCoursePage() {
   const router = useRouter();
 
-  // Form inputs
+  // Active Tab: 'import' (paste json) | 'prompt' (export prompt) | 'presets' (predefined courses)
+  const [activeTab, setActiveTab] = useState<'import' | 'prompt' | 'presets'>('import');
+
+  // Prompt Generator State
   const [targetLanguage, setTargetLanguage] = useState('en');
   const [cefrLevel, setCefrLevel] = useState('B2');
-  const [domainArea, setDomainArea] = useState('Project Management');
+  const [domainArea, setDomainArea] = useState('Stavebnictví a architektura');
+  const [lessonCount, setLessonCount] = useState(10);
+  const [isCopied, setIsCopied] = useState(false);
 
-  // Outline review state
-  const [isGeneratingOutline, setIsGeneratingOutline] = useState(false);
-  const [courseId, setCourseId] = useState<string | null>(null);
-  const [outline, setOutline] = useState<CurriculumLessonOutline[] | null>(null);
-  const [isApproving, setIsApproving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Import State
+  const [jsonInput, setJsonInput] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importSuccess, setImportSuccess] = useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  const handleGenerateOutline = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!domainArea.trim()) return;
+  // Generated prompt string
+  const generatedPrompt = generateGptCoursePrompt({
+    targetLanguage,
+    cefrLevel,
+    domainArea: domainArea.trim() || 'Odborná profesní praxe',
+    lessonCount,
+  });
 
-    setIsGeneratingOutline(true);
-    setError(null);
-
+  const handleCopyPrompt = async () => {
     try {
-      const res = await fetch('/api/courses', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          target_language: targetLanguage,
-          cefr_level: cefrLevel,
-          domain_area: domainArea.trim(),
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error('Chyba při přípravě osnovy kurzu.');
-      }
-
-      const data = await res.json();
-      setCourseId(data.courseId);
-      setOutline(data.outline);
-    } catch (err: any) {
-      setError(err.message || 'Nepodařilo se připravit osnovu.');
-    } finally {
-      setIsGeneratingOutline(false);
+      await navigator.clipboard.writeText(generatedPrompt);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2500);
+    } catch (e) {
+      console.error(e);
     }
   };
 
-  const handleApproveOutline = async () => {
-    if (!courseId) return;
-    setIsApproving(true);
-    setError(null);
+  const handleDownloadPrompt = () => {
+    const blob = new Blob([generatedPrompt], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `zadani_pro_gpt_${domainArea.toLowerCase().replace(/\s+/g, '_')}.txt`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      if (text) {
+        setJsonInput(text);
+        setImportError(null);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleImportCourse = async () => {
+    if (!jsonInput.trim()) {
+      setImportError('Vložte prosím vygenerovaný JSON kód.');
+      return;
+    }
+
+    setIsImporting(true);
+    setImportError(null);
+    setImportSuccess(null);
 
     try {
-      const res = await fetch(`/api/courses/${courseId}/approve-outline`, {
+      const res = await fetch('/api/courses/import-gpt', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonText: jsonInput }),
       });
 
+      const data = await res.json();
+
       if (!res.ok) {
-        throw new Error('Schválení osnovy selhalo.');
+        throw new Error(data.error || 'Chyba při importu kurzu.');
       }
 
-      // Redirect to resumable generation page
-      router.push(`/courses/${courseId}/generate`);
+      setImportSuccess(data.message || 'Kurz byl úspěšně vytvořen!');
+      setTimeout(() => {
+        router.push(`/courses/${data.courseId}`);
+      }, 1000);
     } catch (err: any) {
-      setError(err.message || 'Chyba při schvalování osnovy.');
-      setIsApproving(false);
+      setImportError(err.message || 'Nepodařilo se naimportovat kurz.');
+      setIsImporting(false);
     }
+  };
+
+  // Sample quick test JSON for instant testing
+  const loadSampleJson = () => {
+    const sample = {
+      course: {
+        title: "Stavební inženýrství & Architektura",
+        domain_area: "Civil Engineering & Architecture",
+        target_language: "en",
+        native_language: "cs",
+        cefr_level: "B2",
+        description: "Profesní terminologie pro stavbyvedoucí, projektanty a statiky."
+      },
+      lessons: [
+        {
+          lesson_number: 1,
+          title: "Site Survey & Geotechnical Exploration",
+          theme_focus: "Průzkum staveniště a geotechnické posouzení",
+          article_title: "Foundations and Soil Mechanics on Site",
+          article_body: "Before excavating the building pit, the structural team must complete a borehole investigation. Soil bearing capacity determines whether shallow or deep pile foundations will be engineered.",
+          listening_script: "Good morning team. We have received the geotechnical soil report for zone B. The groundwater level is higher than expected.",
+          items: [
+            {
+              item_type: "expression",
+              target_text: "soil bearing capacity",
+              czech_text: "únosnost zeminy",
+              context_note: "Schopnost podloží unést zatížení základové konstrukce bez sedání.",
+              example_sentence_target: "The engineer verified that the soil bearing capacity meets the structural specification.",
+              example_sentence_czech: "Inženýr ověřil, že únosnost zeminy splňuje statické zadání.",
+              phonetic_hint: "/sɔɪl ˈbeə.rɪŋ kəˈpæs.ə.ti/"
+            },
+            {
+              item_type: "expression",
+              target_text: "borehole sample",
+              czech_text: "vzorek z vrtu / jádrový vzorek",
+              context_note: "Geotechnický vzorek zeminy odebraný při průzkumném vrtání.",
+              example_sentence_target: "Borehole samples revealed a thick layer of dense clay at five meters depth.",
+              example_sentence_czech: "Vzorky z vrtu odhalily silnou vrstvu hutného jílu v hloubce pěti metrů.",
+              phonetic_hint: "/ˈbɔː.həʊl ˈsɑːm.pəl/"
+            },
+            {
+              item_type: "word",
+              target_text: "excavation",
+              czech_text: "výkop / výkopové práce",
+              context_note: "Odebrání zeminy pro základy nebo suterénní prostory.",
+              example_sentence_target: "Excavation for the underground parking lot starts on Monday.",
+              example_sentence_czech: "Výkopové práce pro podzemní parkoviště začínají v pondělí.",
+              phonetic_hint: "/ˌek.skəˈveɪ.ʃən/"
+            },
+            {
+              item_type: "phrase",
+              target_text: "shallow foundations",
+              czech_text: "plošné zakládání / plošné základy",
+              context_note: "Základové pasy, patky nebo desky přenášející zatížení těsně pod terénem.",
+              example_sentence_target: "Due to solid bedrock near the surface, shallow foundations were selected.",
+              example_sentence_czech: "Vzhledem k pevné skalní vrstvě blízko povrchu bylo zvoleno plošné zakládání.",
+              phonetic_hint: "/ˈʃæl.əʊ faʊnˈdeɪ.ʃənz/"
+            }
+          ],
+          exercises: [
+            {
+              exercise_type: "choice",
+              prompt: "Který výraz označuje schopnost podloží přenést zatížení stavby bez nebezpečného sedání?",
+              options: ["soil bearing capacity", "excavation permit", "borehole sample", "tensile strain"],
+              canonical_answer: "soil bearing capacity",
+              explanation: "Soil bearing capacity vyjadřuje únosnost základové půdy."
+            }
+          ]
+        },
+        {
+          lesson_number: 2,
+          title: "Reinforced Concrete & Structural Framing",
+          theme_focus: "Železobetonové konstrukce a statický rám",
+          article_title: "Formwork and Curing Time in Modern Construction",
+          article_body: "Reinforced concrete combines the high compressive strength of concrete with the tensile strength of steel rebar. Adequate curing time is essential before striking the formwork.",
+          listening_script: "Please check the rebar spacing on slab level 3 before the concrete pour scheduled for tomorrow morning.",
+          items: [
+            {
+              item_type: "expression",
+              target_text: "reinforced concrete",
+              czech_text: "železobeton / vyztužený beton",
+              context_note: "Kompozitní stavební materiál z betonu a ocelové výztuže.",
+              example_sentence_target: "Reinforced concrete columns support the entire transfer slab.",
+              example_sentence_czech: "Železobetonové sloupy nesou celou roznášecí desku.",
+              phonetic_hint: "/ˌriː.ɪnˈfɔːst ˈkɒŋ.kriːt/"
+            },
+            {
+              item_type: "word",
+              target_text: "rebar",
+              czech_text: "stavební výztuž / armovací ocel",
+              context_note: "Ocelové pruty vkládané do betonu pro přenos tahových sil.",
+              example_sentence_target: "Inspect the rebar placement to confirm proper concrete cover thickness.",
+              example_sentence_czech: "Zkontrolujte uložení výztuže pro zajištění správné tloušťky krycí vrstvy.",
+              phonetic_hint: "/ˈriː.bɑːr/"
+            },
+            {
+              item_type: "expression",
+              target_text: "curing time",
+              czech_text: "doba zrání betonu",
+              context_note: "Čas potřebný k hydrataci cementu a dosažení projektované pevnosti.",
+              example_sentence_target: "Accelerated curing time allows earlier striking of vertical formwork.",
+              example_sentence_czech: "Zrychlená doba zrání umožňuje dřívější odbednění svislých konstrukcí.",
+              phonetic_hint: "/ˈkjʊə.rɪŋ taɪm/"
+            }
+          ],
+          exercises: [
+            {
+              exercise_type: "choice",
+              prompt: "Jak se v angličtině označuje armovací ocel / výztuž do železobetonu?",
+              options: ["rebar", "aggregate", "formwork", "mortar"],
+              canonical_answer: "rebar",
+              explanation: "Rebar (short for reinforcing bar) je odborný termín pro výztuž."
+            }
+          ]
+        }
+      ]
+    };
+
+    setJsonInput(JSON.stringify(sample, null, 2));
+    setImportError(null);
   };
 
   return (
     <AppLayout>
-      <div className="max-w-3xl mx-auto space-y-8 py-2">
-        {/* Step Header */}
+      <div className="max-w-3xl mx-auto space-y-4 sm:space-y-6 py-2">
+        {/* Header */}
         <div>
-          <span className="text-xs font-semibold text-verba-slate uppercase tracking-wider">
-            Krok 1 ze 2
+          <span className="text-[10px] sm:text-xs font-bold text-verba-indigo uppercase tracking-wider">
+            Správa kurzů
           </span>
-          <h1 className="text-2xl sm:text-3xl font-bold text-verba-ink tracking-tight mt-0.5">
-            {outline ? 'Kontrola Curriculum Outline' : 'Vytvoření nového odborného kurzu'}
+          <h1 className="text-xl sm:text-2xl font-bold text-verba-ink tracking-tight mt-0.5">
+            Nový odborný kurz
           </h1>
-          <p className="text-xs sm:text-sm text-verba-slate mt-1">
-            {outline
-              ? 'Zkontrolujte navržených 50 tematických lekcí a milníků. Teprve po Vašem schválení se začne generovat kompletní obsah.'
-              : 'Definujte cílový jazyk, CEFR úroveň a profesní obor. Systém sestaví pedagogicky provázanou osnovu o 50 lekcích.'}
+          <p className="text-xs text-verba-slate mt-1">
+            Získejte zadání pro ChatGPT / Claude a nahrajte vygenerovaný kurz přímo do aplikace.
           </p>
         </div>
 
-        {error && (
-          <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-start gap-2.5">
-            <AlertCircle className="w-4 h-4 text-verba-error shrink-0 mt-0.5" />
-            <span>{error}</span>
+        {/* Navigation Tabs */}
+        <div className="flex border-b border-slate-200 gap-2 select-none overflow-x-auto no-scrollbar">
+          <button
+            type="button"
+            onClick={() => setActiveTab('import')}
+            className={`flex items-center gap-2 py-2.5 px-3.5 border-b-2 font-semibold text-xs transition-colors whitespace-nowrap ${
+              activeTab === 'import'
+                ? 'border-verba-indigo text-verba-indigo'
+                : 'border-transparent text-verba-slate hover:text-verba-ink'
+            }`}
+          >
+            <FileJson className="w-4 h-4" />
+            <span>Vložit JSON z GPT</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('prompt')}
+            className={`flex items-center gap-2 py-2.5 px-3.5 border-b-2 font-semibold text-xs transition-colors whitespace-nowrap ${
+              activeTab === 'prompt'
+                ? 'border-verba-indigo text-verba-indigo'
+                : 'border-transparent text-verba-slate hover:text-verba-ink'
+            }`}
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Zadání pro GPT (Prompt)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('presets')}
+            className={`flex items-center gap-2 py-2.5 px-3.5 border-b-2 font-semibold text-xs transition-colors whitespace-nowrap ${
+              activeTab === 'presets'
+                ? 'border-verba-indigo text-verba-indigo'
+                : 'border-transparent text-verba-slate hover:text-verba-ink'
+            }`}
+          >
+            <Layers className="w-4 h-4" />
+            <span>Předpřipravené kurzy</span>
+          </button>
+        </div>
+
+        {/* TAB 1: IMPORT FROM GPT JSON */}
+        {activeTab === 'import' && (
+          <div className="space-y-4">
+            <div className="verba-card p-4 sm:p-6 space-y-4">
+              <div className="space-y-1">
+                <h2 className="text-sm font-bold text-verba-ink">
+                  Vložení vygenerovaného kurzu z GPT
+                </h2>
+                <p className="text-xs text-verba-slate leading-relaxed">
+                  Vložte JSON vygenerovaný z ChatGPT nebo Claude do pole níže. Aplikace automaticky vytvoří kurz, lekce, slovní zásobu i cvičení.
+                </p>
+              </div>
+
+              {/* Error / Success feedback */}
+              {importError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-verba-error shrink-0 mt-0.5" />
+                  <span>{importError}</span>
+                </div>
+              )}
+
+              {importSuccess && (
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-start gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>{importSuccess} Otevírám kurz...</span>
+                </div>
+              )}
+
+              {/* Textarea */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[11px] font-semibold text-verba-slate uppercase tracking-wider">
+                    JSON kód kurzu:
+                  </label>
+                  <button
+                    type="button"
+                    onClick={loadSampleJson}
+                    className="text-[11px] font-semibold text-verba-indigo hover:underline"
+                  >
+                    Vložit ukázkový JSON pro test
+                  </button>
+                </div>
+                <textarea
+                  value={jsonInput}
+                  onChange={(e) => {
+                    setJsonInput(e.target.value);
+                    setImportError(null);
+                  }}
+                  rows={10}
+                  placeholder="Vložte sem zkopírovaný JSON objekt z ChatGPT / Claude..."
+                  className="w-full p-3 rounded-xl border border-slate-200 bg-slate-50/50 font-mono text-xs text-verba-ink focus:outline-hidden focus:border-verba-indigo focus:bg-white transition-all"
+                />
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="py-2 px-3 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 font-medium text-xs flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Nahrát .json soubor</span>
+                  </button>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileUpload}
+                    accept=".json,.txt"
+                    className="hidden"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleImportCourse}
+                  disabled={isImporting || !jsonInput.trim()}
+                  className="py-2.5 px-6 rounded-xl bg-verba-indigo hover:bg-verba-indigo-dark text-white font-semibold text-xs shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50 active:scale-98"
+                >
+                  {isImporting ? (
+                    <span>Ukládám kurz...</span>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Vytvořit a otevřít kurz</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Helper */}
+            <div className="p-3 rounded-xl bg-indigo-50/50 border border-indigo-100 flex items-start gap-2.5 text-xs text-indigo-950">
+              <HelpCircle className="w-4 h-4 text-verba-indigo shrink-0 mt-0.5" />
+              <div>
+                <span className="font-semibold">Nemáte ještě vygenerovaný JSON? </span>
+                Přejděte na záložku <strong>„Zadání pro GPT (Prompt)“</strong>, zkopírujte připravené zadání a vložte jej do ChatGPT nebo Claude.
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Phase 1: Setup Form (hidden once outline is ready to review) */}
-        {!outline && (
-          <form onSubmit={handleGenerateOutline} className="verba-card p-6 sm:p-8 space-y-6">
-            <div className="space-y-4">
-              {/* Target Language */}
-              <div>
-                <label className="block text-xs font-semibold text-verba-ink uppercase tracking-wider mb-2">
-                  Cílový jazyk (Target Language)
-                </label>
-                <select
-                  value={targetLanguage}
-                  onChange={(e) => setTargetLanguage(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-verba-ink focus:outline-hidden focus:border-verba-indigo"
-                >
-                  <option value="en">Angličtina (English) — Primární MVP</option>
-                  <option value="de">Němčina (Deutsch) — Architektonická podpora</option>
-                  <option value="es">Španělština (Español) — Architektonická podpora</option>
-                </select>
-                <p className="text-[11px] text-verba-slate mt-1.5">
-                  Výchozí domácí jazyk pro překlady a vysvětlení: <strong>Čeština (CZ)</strong>.
+        {/* TAB 2: EXPORT PROMPT & SCHEMA FOR GPT */}
+        {activeTab === 'prompt' && (
+          <div className="space-y-4">
+            <div className="verba-card p-4 sm:p-6 space-y-5">
+              <div className="space-y-1">
+                <h2 className="text-sm font-bold text-verba-ink">
+                  Nastavení zadání pro GPT
+                </h2>
+                <p className="text-xs text-verba-slate">
+                  Nakonfigurujte parametry a jedním kliknutím zkopírujte prompt pro ChatGPT / Claude včetně přesného schématu a pedagogických instrukcí.
                 </p>
               </div>
 
-              {/* CEFR Level */}
-              <div>
-                <label className="block text-xs font-semibold text-verba-ink uppercase tracking-wider mb-2">
-                  CEFR Úroveň
-                </label>
-                <div className="grid grid-cols-6 gap-2">
-                  {['A1', 'A2', 'B1', 'B2', 'C1', 'C2'].map((lvl) => (
-                    <button
-                      type="button"
-                      key={lvl}
-                      onClick={() => setCefrLevel(lvl)}
-                      className={`py-2 rounded-xl text-xs font-bold border transition-all ${
-                        cefrLevel === lvl
-                          ? 'bg-verba-indigo text-white border-verba-indigo shadow-xs'
-                          : 'bg-white text-verba-slate border-slate-200 hover:border-indigo-200'
-                      }`}
-                    >
-                      {lvl}
-                    </button>
-                  ))}
+              {/* Form parameters */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Target Language */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-verba-slate uppercase mb-1">
+                    Cílový jazyk
+                  </label>
+                  <select
+                    value={targetLanguage}
+                    onChange={(e) => setTargetLanguage(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-medium text-verba-ink focus:border-verba-indigo"
+                  >
+                    <option value="en">Angličtina (English)</option>
+                    <option value="de">Němčina (Deutsch)</option>
+                    <option value="es">Španělština (Español)</option>
+                    <option value="fr">Francouzština (Français)</option>
+                    <option value="it">Italština (Italiano)</option>
+                  </select>
+                </div>
+
+                {/* CEFR Level */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-verba-slate uppercase mb-1">
+                    CEFR Úroveň
+                  </label>
+                  <select
+                    value={cefrLevel}
+                    onChange={(e) => setCefrLevel(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-medium text-verba-ink focus:border-verba-indigo"
+                  >
+                    <option value="A1">A1 — Úplný začátečník</option>
+                    <option value="A2">A2 — Základní znalosti</option>
+                    <option value="B1">B1 — Mírně pokročilý</option>
+                    <option value="B2">B2 — Středně pokročilý (Doporučeno)</option>
+                    <option value="C1">C1 — Pokročilý / Expert</option>
+                    <option value="C2">C2 — Rodilý mluvčí</option>
+                  </select>
+                </div>
+
+                {/* Domain Area */}
+                <div className="sm:col-span-2">
+                  <label className="block text-[11px] font-semibold text-verba-slate uppercase mb-1">
+                    Profesní obor / Zaměření kurzu
+                  </label>
+                  <input
+                    type="text"
+                    value={domainArea}
+                    onChange={(e) => setDomainArea(e.target.value)}
+                    placeholder="např. Stavebnictví, Právo a smlouvy, Lékařská diagnostika..."
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-medium text-verba-ink focus:border-verba-indigo"
+                  />
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {[
+                      'Stavebnictví a architektura',
+                      'Právo a soudní spory',
+                      'Lékařská péče a farmacie',
+                      'Finanční audit a controlling',
+                      'Logistika a dodavatelský řetězec',
+                      'Marketing & Public Relations',
+                    ].map((preset) => (
+                      <button
+                        type="button"
+                        key={preset}
+                        onClick={() => setDomainArea(preset)}
+                        className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-indigo-50 text-[10px] font-medium text-verba-slate hover:text-verba-indigo transition-colors"
+                      >
+                        {preset}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Number of Lessons */}
+                <div className="sm:col-span-2">
+                  <label className="block text-[11px] font-semibold text-verba-slate uppercase mb-1">
+                    Počet lekcí v zadání
+                  </label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {[
+                      { count: 5, note: 'Rychlé generování' },
+                      { count: 10, note: 'Doporučeno' },
+                      { count: 20, note: 'Střední rozsah' },
+                      { count: 50, note: 'Plný rozsah' },
+                    ].map((opt) => (
+                      <button
+                        type="button"
+                        key={opt.count}
+                        onClick={() => setLessonCount(opt.count)}
+                        className={`p-2 rounded-xl text-center border transition-all ${
+                          lessonCount === opt.count
+                            ? 'bg-verba-indigo text-white border-verba-indigo shadow-xs'
+                            : 'bg-white text-verba-ink border-slate-200 hover:border-indigo-200'
+                        }`}
+                      >
+                        <div className="text-xs font-bold">{opt.count} lekcí</div>
+                        <div className={`text-[9px] mt-0.5 ${lessonCount === opt.count ? 'text-indigo-100' : 'text-verba-slate'}`}>
+                          {opt.note}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
-              {/* Domain / Professional Area */}
+              {/* Action buttons: Copy & Download */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={handleCopyPrompt}
+                  className={`flex-1 py-2.5 px-4 rounded-xl font-semibold text-xs shadow-xs transition-all flex items-center justify-center gap-2 active:scale-98 ${
+                    isCopied
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-verba-indigo hover:bg-verba-indigo-dark text-white'
+                  }`}
+                >
+                  {isCopied ? (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>Zkopírováno do schránky! ✅</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      <span>Kopírovat zadání pro GPT</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadPrompt}
+                  className="py-2.5 px-4 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-medium text-xs flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Stáhnout jako .txt</span>
+                </button>
+              </div>
+
+              {/* Prompt Preview */}
               <div>
-                <label className="block text-xs font-semibold text-verba-ink uppercase tracking-wider mb-2">
-                  Profesní oblast / Odbornost (Professional Domain)
+                <label className="block text-[11px] font-semibold text-verba-slate uppercase mb-1">
+                  Náhled zadání a JSON schématu:
                 </label>
-                <input
-                  type="text"
-                  value={domainArea}
-                  onChange={(e) => setDomainArea(e.target.value)}
-                  placeholder="např. Project Management, Software Engineering, Financial Audit..."
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-verba-ink focus:outline-hidden focus:border-verba-indigo"
-                  required
-                />
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {[
-                    'Project Management',
-                    'Product Management',
-                    'Software Engineering',
-                    'Negotiation & Sales',
-                    'Human Resources',
-                  ].map((preset) => (
-                    <button
-                      type="button"
-                      key={preset}
-                      onClick={() => setDomainArea(preset)}
-                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-indigo-50 text-[11px] font-medium text-verba-slate hover:text-verba-indigo transition-colors"
-                    >
-                      {preset}
-                    </button>
-                  ))}
+                <div className="p-3 rounded-xl bg-slate-900 text-slate-200 font-mono text-[11px] max-h-56 overflow-y-auto leading-relaxed select-all whitespace-pre-wrap">
+                  {generatedPrompt}
                 </div>
               </div>
             </div>
-
-            <button
-              type="submit"
-              disabled={isGeneratingOutline || !domainArea.trim()}
-              className="w-full py-3.5 px-6 rounded-xl bg-verba-indigo hover:bg-verba-indigo-dark text-white font-semibold text-sm shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              {isGeneratingOutline ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Sestavuji 50-lekcí Curriculum Outline...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4" />
-                  <span>Generovat 50-lekcí Curriculum Outline</span>
-                </>
-              )}
-            </button>
-          </form>
+          </div>
         )}
 
-        {/* Phase 2: Curriculum Outline Review (Mandatory Business Gate) */}
-        {outline && (
-          <div className="space-y-6 animate-in fade-in duration-200">
-            {/* Approval Banner */}
-            <div className="verba-card p-5 border-indigo-200 bg-indigo-50/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4 sticky top-16 z-20 backdrop-blur-md">
-              <div className="space-y-0.5">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-verba-indigo uppercase tracking-wider">
-                    Povinná schvalovací brána
-                  </span>
-                  <span className="text-xs px-2 py-0.5 rounded-md bg-white border border-indigo-200 font-semibold text-verba-ink">
-                    50 témat připraveno
-                  </span>
-                </div>
-                <p className="text-xs text-verba-slate">
-                  Obsah všech lekcí se vygeneruje až po Vašem explicitním schválení.
-                </p>
-              </div>
+        {/* TAB 3: PREPARED COURSES */}
+        {activeTab === 'presets' && (
+          <div className="space-y-3">
+            <div className="verba-card p-4 space-y-3">
+              <h2 className="text-sm font-bold text-verba-ink">
+                Předpřipravené profesionální kurzy
+              </h2>
+              <p className="text-xs text-verba-slate">
+                Všechny tyto kurzy jsou kompletně připravené k okamžitému studiu s 50 unikátními lekcemi a cvičeními:
+              </p>
 
-              <button
-                onClick={handleApproveOutline}
-                disabled={isApproving}
-                className="py-3 px-6 rounded-xl bg-verba-indigo hover:bg-verba-indigo-dark text-white font-semibold text-sm shadow-md transition-all flex items-center justify-center gap-2 shrink-0 active:scale-95 disabled:opacity-50"
-              >
-                {isApproving ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Schvaluji osnovu...</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Schválit osnovu a generovat kurz</span>
-                  </>
-                )}
-              </button>
-            </div>
-
-            {/* List of 50 Lessons in Outline */}
-            <div className="verba-card divide-y divide-slate-100 overflow-hidden">
-              <div className="p-4 bg-slate-50/60 font-semibold text-xs text-verba-slate uppercase tracking-wider flex justify-between">
-                <span>Struktura kurzu: {targetLanguage.toUpperCase()} • {cefrLevel} {domainArea}</span>
-                <span>Celkem 50 lekcí (včetně 5 milníků)</span>
-              </div>
-
-              {outline.map((item) => {
-                const isCheckpoint = item.lesson_number % 10 === 0;
-
-                return (
-                  <div
-                    key={item.lesson_number}
-                    className={`p-4 transition-colors flex items-start gap-4 ${
-                      isCheckpoint
-                        ? 'bg-amber-50/40 hover:bg-amber-50/70 border-l-4 border-l-verba-review'
-                        : 'hover:bg-slate-50/60'
-                    }`}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                {[
+                  { id: 'crs_project_management_b2', title: 'Project Management', lang: 'EN', level: 'B2', desc: 'Řízení projektů, harmonogramy, stakeholder management a WBS.' },
+                  { id: 'crs_software_engineering_b2', title: 'Software Engineering', lang: 'EN', level: 'B2', desc: 'Softwarová architektura, clean code, code reviews a CI/CD.' },
+                  { id: 'crs_product_management_b2', title: 'Product Management', lang: 'EN', level: 'B2', desc: 'Produktová vize, user research, roadmapy a metriky (AARRR).' },
+                  { id: 'crs_business_analyst_b2', title: 'Business analýza', lang: 'EN', level: 'B2', desc: 'Požadavky, procesní modelování BPMN a specifikace.' },
+                ].map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => router.push(`/courses/${c.id}`)}
+                    className="p-3 rounded-xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/30 text-left transition-all group"
                   >
-                    <div
-                      className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${
-                        isCheckpoint
-                          ? 'bg-verba-review text-white'
-                          : 'bg-indigo-50 text-verba-indigo'
-                      }`}
-                    >
-                      {item.lesson_number}
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-bold text-xs text-verba-ink group-hover:text-verba-indigo">
+                        {c.title}
+                      </span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-verba-slate">
+                        {c.lang} • {c.level}
+                      </span>
                     </div>
-
-                    <div className="flex-1 min-w-0 space-y-1">
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-bold text-verba-ink">
-                          {item.title}
-                        </h3>
-                        {isCheckpoint && (
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 text-verba-review shrink-0">
-                            Milník Checkpoint {item.lesson_number / 10}
-                          </span>
-                        )}
-                      </div>
-
-                      {item.theme_focus && (
-                        <div className="text-xs font-semibold text-verba-indigo flex items-center gap-1.5">
-                          <span className="opacity-75">Konkrétní téma:</span>
-                          <span>{item.theme_focus}</span>
-                        </div>
-                      )}
-
-                      <p className="text-xs text-verba-slate leading-relaxed">
-                        <span className="font-medium text-verba-ink">Cíl: </span>
-                        {item.learning_goal}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
+                    <p className="text-[11px] text-verba-slate line-clamp-2">
+                      {c.desc}
+                    </p>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         )}
