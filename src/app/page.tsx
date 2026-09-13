@@ -19,11 +19,15 @@ import {
   BookA
 } from 'lucide-react';
 
-import { getLastActiveCourseId, markCourseAsOpened } from '@/lib/client-storage';
+import { getLastActiveCourseId, markCourseAsOpened, getAllMergedCourses } from '@/lib/client-storage';
 
 export default function HomePage() {
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [activeCourse, setActiveCourse] = useState<Course | null>(null);
+  const [courses, setCourses] = useState<Course[]>(() => getAllMergedCourses());
+  const [activeCourse, setActiveCourse] = useState<Course | null>(() => {
+    const all = getAllMergedCourses();
+    const savedId = getLastActiveCourseId();
+    return (savedId && all.find(c => c.id === savedId)) || all[0] || null;
+  });
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [outline, setOutline] = useState<any[]>([]);
   const [progressData, setProgressData] = useState<any>(null);
@@ -31,22 +35,27 @@ export default function HomePage() {
   const [lessonFilter, setLessonFilter] = useState<'all' | 'milestones'>('all');
 
   useEffect(() => {
-    fetch('/api/courses')
-      .then((res) => res.json())
-      .then(async (data: Course[]) => {
-        if (Array.isArray(data) && data.length > 0) {
-          setCourses(data);
-          const savedActiveId = getLastActiveCourseId();
-          const targetCourse = (savedActiveId && data.find((c) => c.id === savedActiveId)) || data[0];
+    const loadData = async () => {
+      try {
+        const res = await fetch('/api/courses');
+        const data: Course[] = res.ok ? await res.json() : [];
+        const merged = getAllMergedCourses(Array.isArray(data) ? data : []);
+        setCourses(merged);
+
+        const savedActiveId = getLastActiveCourseId();
+        const targetCourse = (savedActiveId && merged.find((c) => c.id === savedActiveId)) || merged[0];
+        if (targetCourse) {
           setActiveCourse(targetCourse);
           markCourseAsOpened(targetCourse.id, targetCourse);
 
           // Fetch full course data including lessons & outline
           try {
             const courseRes = await fetch(`/api/courses/${targetCourse.id}`);
-            const courseData = await courseRes.json();
-            if (courseData.lessons) setLessons(courseData.lessons);
-            if (courseData.outline) setOutline(courseData.outline);
+            if (courseRes.ok) {
+              const courseData = await courseRes.json();
+              if (courseData.lessons) setLessons(courseData.lessons);
+              if (courseData.outline) setOutline(courseData.outline);
+            }
           } catch (e) {
             console.error('Error fetching course lessons:', e);
           }
@@ -54,19 +63,27 @@ export default function HomePage() {
           if (targetCourse.status === 'ready' || targetCourse.completed_lessons_count > 0) {
             try {
               const progRes = await fetch(`/api/courses/${targetCourse.id}/progress`);
-              const prog = await progRes.json();
-              setProgressData(prog);
+              if (progRes.ok) {
+                const prog = await progRes.json();
+                setProgressData(prog);
+              }
             } catch (e) {
               console.error('Error fetching progress:', e);
             }
           }
         }
-        setLoading(false);
-      })
-      .catch((err) => {
+      } catch (err) {
         console.error(err);
+      } finally {
         setLoading(false);
-      });
+      }
+    };
+
+    loadData();
+
+    const handleUpdate = () => loadData();
+    window.addEventListener('courses-updated', handleUpdate);
+    return () => window.removeEventListener('courses-updated', handleUpdate);
   }, []);
 
   if (loading) {

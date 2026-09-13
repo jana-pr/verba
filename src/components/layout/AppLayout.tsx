@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { Sidebar } from './Sidebar';
 import { BottomNav } from './BottomNav';
 import { VerbaLogo } from '../brand/VerbaLogo';
@@ -21,7 +22,8 @@ import {
   BookA, 
   BarChart3, 
   Home, 
-  Sparkles 
+  Sparkles,
+  Check
 } from 'lucide-react';
 import { MobileQrModal } from '../mobile/MobileQrModal';
 import { Course } from '@/lib/db/schema';
@@ -29,7 +31,9 @@ import {
   markCourseAsOpened, 
   getLastActiveCourseId, 
   performAutoSync, 
-  getClientVault 
+  getClientVault,
+  getAllMergedCourses,
+  DEFAULT_PRESET_COURSES
 } from '@/lib/client-storage';
 
 interface AppLayoutProps {
@@ -41,48 +45,71 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   children,
   activeCourseId,
 }) => {
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [currentCourse, setCurrentCourse] = useState<Course | null>(null);
+  const pathname = usePathname();
+  const courseIdFromPath = pathname?.startsWith('/courses/')
+    ? pathname.split('/')[2]
+    : null;
+  const effectiveCourseId = (courseIdFromPath && courseIdFromPath !== 'new')
+    ? courseIdFromPath
+    : activeCourseId;
+
+  // Immediately initialize with all merged courses (preset defaults + local storage)
+  const [courses, setCourses] = useState<Course[]>(() => {
+    return getAllMergedCourses();
+  });
+
+  const [currentCourse, setCurrentCourse] = useState<Course | null>(() => {
+    const all = getAllMergedCourses();
+    const savedActiveId = getLastActiveCourseId();
+    const targetId = effectiveCourseId || savedActiveId;
+    return (targetId && all.find((c: any) => c.id === targetId)) || all[0] || null;
+  });
+
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
+  // Synchronously update current course when route or prop changes
+  useEffect(() => {
+    if (effectiveCourseId) {
+      const found = courses.find((c) => c.id === effectiveCourseId);
+      if (found) {
+        setCurrentCourse(found);
+        markCourseAsOpened(found.id, found);
+      }
+    }
+  }, [effectiveCourseId, courses]);
+
+  // Fetch server courses and run non-blocking auto-sync
   useEffect(() => {
     const fetchAndSyncCourses = async () => {
       try {
-        // 1. Auto-sync with server to restore any courses and progress across redeployments
-        await performAutoSync();
-
-        // 2. Fetch all courses from server
         const res = await fetch('/api/courses');
-        const data: Course[] = await res.json();
-        if (Array.isArray(data)) {
-          // Merge with any courses stored in local client vault
-          const vault = getClientVault();
-          const serverMap = new Map(data.map((c) => [c.id, c]));
-          const combinedCourses: Course[] = [...data];
+        if (res.ok) {
+          const serverData: Course[] = await res.json();
+          if (Array.isArray(serverData)) {
+            const merged = getAllMergedCourses(serverData);
+            setCourses(merged);
 
-          for (const vc of vault.courses || []) {
-            if (!serverMap.has(vc.id)) {
-              combinedCourses.push(vc);
+            const savedActiveId = getLastActiveCourseId();
+            const targetId = effectiveCourseId || savedActiveId;
+            const found = (targetId && merged.find((c) => c.id === targetId)) || merged[0];
+            if (found) {
+              setCurrentCourse(found);
+              markCourseAsOpened(found.id, found);
             }
-          }
-
-          setCourses(combinedCourses);
-
-          // 3. Resolve active course: explicit prop -> last opened course -> first course
-          const savedActiveId = getLastActiveCourseId();
-          const targetId = activeCourseId || savedActiveId;
-          const found = (targetId && combinedCourses.find((c) => c.id === targetId)) || combinedCourses[0];
-
-          if (found) {
-            setCurrentCourse(found);
-            markCourseAsOpened(found.id, found);
           }
         }
       } catch (err) {
         console.error('Error fetching courses:', err);
+      }
+
+      // Background non-blocking sync
+      try {
+        await performAutoSync();
+      } catch (syncErr) {
+        console.warn('Background sync note:', syncErr);
       }
     };
 
@@ -93,7 +120,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     };
     window.addEventListener('courses-updated', handleCoursesUpdated);
     return () => window.removeEventListener('courses-updated', handleCoursesUpdated);
-  }, [activeCourseId]);
+  }, [effectiveCourseId]);
 
   const handleImportBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -185,8 +212,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             {courses.length > 0 && (
               <div className="relative">
                 <button
+                  type="button"
                   onClick={() => setIsDropdownOpen(!isDropdownOpen)}
                   className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 hover:border-indigo-300 bg-white text-xs font-medium text-verba-ink transition-colors shadow-2xs"
+                  aria-label="Přepnout kurz"
                 >
                   <BookOpen className="w-3.5 h-3.5 text-verba-indigo shrink-0" />
                   <span className="truncate max-w-[90px] xs:max-w-[140px] sm:max-w-[200px]">
@@ -198,81 +227,107 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 </button>
 
                 {isDropdownOpen && (
-                  <div
-                    className="absolute left-0 mt-1.5 w-72 max-w-[90vw] bg-white rounded-xl shadow-lg border border-slate-100 py-1.5 z-50 animate-in fade-in slide-in-from-top-1"
-                    onClick={() => setIsDropdownOpen(false)}
-                  >
-                    <div className="px-3 py-1.5 text-[10px] font-semibold text-verba-slate uppercase tracking-wider">
-                      Moje aktivní kurzy
-                    </div>
-                    {courses.map((c) => (
-                      <div
-                        key={c.id}
-                        className={`flex items-center justify-between px-3 py-2 text-xs hover:bg-slate-50 transition-colors group ${
-                          c.id === currentCourse?.id
-                            ? 'font-semibold text-verba-indigo bg-indigo-50/50'
-                            : 'text-verba-ink'
-                        }`}
-                      >
+                  <>
+                    {/* Backdrop to close on tap outside */}
+                    <div 
+                      className="fixed inset-0 z-40" 
+                      onClick={() => setIsDropdownOpen(false)} 
+                    />
+                    <div
+                      className="absolute left-0 mt-1.5 w-76 max-w-[90vw] bg-white rounded-xl shadow-xl border border-slate-100 py-1.5 z-50 animate-in fade-in slide-in-from-top-1"
+                    >
+                      <div className="px-3 py-1.5 text-[10px] font-semibold text-verba-slate uppercase tracking-wider flex items-center justify-between border-b border-slate-50 pb-1.5 mb-1">
+                        <span>Moje kurzy ({courses.length})</span>
+                        <span className="text-[9px] text-verba-indigo font-normal">Kliknutím přepnete</span>
+                      </div>
+                      <div className="max-h-72 overflow-y-auto divide-y divide-slate-50">
+                        {courses.map((c) => {
+                          const isSelected = c.id === currentCourse?.id;
+                          return (
+                            <div
+                              key={c.id}
+                              className={`flex items-center justify-between px-3 py-2 text-xs hover:bg-slate-50 transition-colors group ${
+                                isSelected
+                                  ? 'font-semibold text-verba-indigo bg-indigo-50/60'
+                                  : 'text-verba-ink'
+                              }`}
+                            >
+                              <Link
+                                href={`/courses/${c.id}`}
+                                onClick={() => {
+                                  setCurrentCourse(c);
+                                  markCourseAsOpened(c.id, c);
+                                  setIsDropdownOpen(false);
+                                }}
+                                className="flex items-center justify-between flex-1 min-w-0 pr-2"
+                              >
+                                <div className="truncate flex items-center gap-1.5">
+                                  {isSelected && (
+                                    <Check className="w-3.5 h-3.5 text-verba-indigo shrink-0 stroke-[2.5]" />
+                                  )}
+                                  <div className="truncate">
+                                    <span className="font-semibold mr-1.5">
+                                      {c.target_language.toUpperCase()} ({c.cefr_level})
+                                    </span>
+                                    <span className="text-verba-slate">{c.domain_area}</span>
+                                  </div>
+                                </div>
+                                <span className="text-[10px] text-verba-slate shrink-0 ml-2 font-normal">
+                                  {c.completed_lessons_count || 50}/{c.total_lessons || 50}
+                                </span>
+                              </Link>
+
+                              {/* Delete course button */}
+                              <button
+                                type="button"
+                                onClick={(e) => handleDeleteCourse(c.id, c.domain_area, e)}
+                                className="p-1 rounded-md text-slate-300 hover:text-verba-error hover:bg-rose-50 transition-colors opacity-80 sm:opacity-0 group-hover:opacity-100 shrink-0"
+                                title={`Smazat kurz ${c.domain_area}`}
+                                aria-label={`Smazat kurz ${c.domain_area}`}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="border-t border-slate-100 mt-1 pt-1 space-y-0.5">
                         <Link
-                          href={`/courses/${c.id}`}
-                          className="flex items-center justify-between flex-1 min-w-0 pr-2"
+                          href="/courses/new"
+                          onClick={() => setIsDropdownOpen(false)}
+                          className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-verba-indigo hover:bg-indigo-50 transition-colors rounded-md"
                         >
-                          <div className="truncate">
-                            <span className="font-semibold mr-1.5">
-                              {c.target_language.toUpperCase()} ({c.cefr_level})
-                            </span>
-                            <span className="text-verba-slate">{c.domain_area}</span>
-                          </div>
-                          <span className="text-[10px] text-verba-slate shrink-0 ml-2">
-                            {c.completed_lessons_count}/{c.total_lessons || 50}
-                          </span>
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Nový kurz z GPT</span>
                         </Link>
 
-                        {/* Delete course button */}
+                        <div className="border-t border-slate-100 my-1"></div>
+
+                        <a
+                          href="/api/courses/backup"
+                          download
+                          className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors rounded-md"
+                          title="Stáhnout kompletní zálohu kurzů do JSON souboru"
+                        >
+                          <Download className="w-3.5 h-3.5 text-slate-500" />
+                          <span>Zálohovat kurzy (JSON)</span>
+                        </a>
+
                         <button
                           type="button"
-                          onClick={(e) => handleDeleteCourse(c.id, c.domain_area, e)}
-                          className="p-1 rounded-md text-slate-300 hover:text-verba-error hover:bg-rose-50 transition-colors opacity-80 sm:opacity-0 group-hover:opacity-100 shrink-0"
-                          title={`Smazat kurz ${c.domain_area}`}
-                          aria-label={`Smazat kurz ${c.domain_area}`}
+                          onClick={() => {
+                            setIsDropdownOpen(false);
+                            fileInputRef.current?.click();
+                          }}
+                          className="flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors rounded-md"
+                          title="Obnovit kurzy ze záložního JSON souboru"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Upload className="w-3.5 h-3.5 text-slate-500" />
+                          <span>Obnovit ze zálohy</span>
                         </button>
                       </div>
-                    ))}
-                    <div className="border-t border-slate-100 mt-1 pt-1 space-y-0.5">
-                      <Link
-                        href="/courses/new"
-                        className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-verba-indigo hover:bg-indigo-50 transition-colors rounded-md"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Nový kurz z GPT</span>
-                      </Link>
-
-                      <div className="border-t border-slate-100 my-1"></div>
-
-                      <a
-                        href="/api/courses/backup"
-                        download
-                        className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors rounded-md"
-                        title="Stáhnout kompletní zálohu kurzů do JSON souboru"
-                      >
-                        <Download className="w-3.5 h-3.5 text-slate-500" />
-                        <span>Zálohovat kurzy (JSON)</span>
-                      </a>
-
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors rounded-md"
-                        title="Obnovit kurzy ze záložního JSON souboru"
-                      >
-                        <Upload className="w-3.5 h-3.5 text-slate-500" />
-                        <span>Obnovit ze zálohy</span>
-                      </button>
                     </div>
-                  </div>
+                  </>
                 )}
               </div>
             )}
@@ -352,36 +407,46 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 </div>
 
                 <div className="space-y-1">
-                  {courses.map((c) => (
-                    <div
-                      key={c.id}
-                      className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-colors ${
-                        c.id === currentCourse?.id
-                          ? 'bg-indigo-50 text-verba-indigo font-bold shadow-xs'
-                          : 'hover:bg-slate-50 text-verba-ink'
-                      }`}
-                    >
-                      <Link
-                        href={`/courses/${c.id}`}
-                        onClick={() => setIsMobileDrawerOpen(false)}
-                        className="flex-1 truncate pr-2"
+                  {courses.map((c) => {
+                    const isSelected = c.id === currentCourse?.id;
+                    return (
+                      <div
+                        key={c.id}
+                        className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-colors ${
+                          isSelected
+                            ? 'bg-indigo-50 text-verba-indigo font-bold shadow-xs'
+                            : 'hover:bg-slate-50 text-verba-ink'
+                        }`}
                       >
-                        <span className="mr-1">{c.target_language.toUpperCase()} •</span>
-                        <span>{c.domain_area}</span>
-                        <span className="text-[10px] text-verba-slate ml-1.5 font-normal">
-                          ({c.completed_lessons_count}/{c.total_lessons || 50})
-                        </span>
-                      </Link>
-                      <button
-                        type="button"
-                        onClick={(e) => handleDeleteCourse(c.id, c.domain_area, e)}
-                        className="p-1 text-slate-300 hover:text-verba-error rounded transition-colors"
-                        title="Smazat kurz"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ))}
+                        <Link
+                          href={`/courses/${c.id}`}
+                          onClick={() => {
+                            setCurrentCourse(c);
+                            markCourseAsOpened(c.id, c);
+                            setIsMobileDrawerOpen(false);
+                          }}
+                          className="flex-1 truncate pr-2 flex items-center gap-1.5"
+                        >
+                          {isSelected && (
+                            <Check className="w-3.5 h-3.5 text-verba-indigo shrink-0 stroke-[2.5]" />
+                          )}
+                          <span className="mr-1">{c.target_language.toUpperCase()} •</span>
+                          <span>{c.domain_area}</span>
+                          <span className="text-[10px] text-verba-slate ml-1.5 font-normal">
+                            ({c.completed_lessons_count || 50}/{c.total_lessons || 50})
+                          </span>
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteCourse(c.id, c.domain_area, e)}
+                          className="p-1 text-slate-300 hover:text-verba-error rounded transition-colors"
+                          title="Smazat kurz"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 

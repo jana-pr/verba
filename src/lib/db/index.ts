@@ -16,7 +16,7 @@ export function getDb(): DatabaseSync {
     dbInstance = new DatabaseSync(DB_FILE);
     dbInstance.exec(`PRAGMA foreign_keys = ON;`);
     initTables(dbInstance);
-    seedIfEmpty(dbInstance);
+    ensureSeedCourses(dbInstance);
   }
   return dbInstance;
 }
@@ -165,82 +165,91 @@ function initTables(db: DatabaseSync) {
 
 export const DEFAULT_USER_ID = 'usr_jana_default';
 
-function seedIfEmpty(db: DatabaseSync) {
+export function ensureSeedCourses(db: DatabaseSync) {
   try {
-    const row = db.prepare('SELECT COUNT(*) as c FROM courses').get() as { c: number } | undefined;
-    if (row && row.c === 0) {
-      const seedFile = path.join(process.cwd(), 'data', 'seed-courses.json');
-      if (fs.existsSync(seedFile)) {
-        console.log('Database empty: Seeding courses from data/seed-courses.json...');
-        const data = JSON.parse(fs.readFileSync(seedFile, 'utf8'));
+    const seedFile = path.join(process.cwd(), 'data', 'seed-courses.json');
+    if (!fs.existsSync(seedFile)) return;
 
-        db.exec('BEGIN TRANSACTION;');
-        try {
-          const insertCourse = db.prepare(`
-            INSERT OR IGNORE INTO courses (id, user_id, target_language, native_language, cefr_level, domain_area, status, total_lessons, completed_lessons_count, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `);
-          for (const c of data.courses || []) {
-            insertCourse.run(c.id, c.user_id, c.target_language, c.native_language, c.cefr_level, c.domain_area, c.status, c.total_lessons, c.completed_lessons_count, c.created_at, c.updated_at);
-          }
+    const data = JSON.parse(fs.readFileSync(seedFile, 'utf8'));
+    if (!data.courses || data.courses.length === 0) return;
 
-          const insertOutline = db.prepare(`
-            INSERT OR IGNORE INTO curriculum_outlines (id, course_id, outline_json, is_approved, approved_at, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-          `);
-          for (const o of data.outlines || []) {
-            insertOutline.run(o.id, o.course_id, o.outline_json, o.is_approved, o.approved_at, o.created_at);
-          }
+    // Check if any seed course is missing from DB
+    const existingIds = new Set(
+      (db.prepare('SELECT id FROM courses').all() as { id: string }[]).map((r) => r.id)
+    );
 
-          const insertLesson = db.prepare(`
-            INSERT OR IGNORE INTO lessons (id, course_id, lesson_number, title, theme_focus, article_title, article_body, listening_script, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `);
-          for (const l of data.lessons || []) {
-            insertLesson.run(l.id, l.course_id, l.lesson_number, l.title, l.theme_focus, l.article_title, l.article_body, l.listening_script, l.status, l.created_at);
-          }
+    const hasMissing = data.courses.some((c: any) => !existingIds.has(c.id));
+    if (!hasMissing && existingIds.size >= 4) {
+      // All core courses are already present
+      return;
+    }
 
-          const insertItem = db.prepare(`
-            INSERT OR IGNORE INTO learning_items (id, lesson_id, course_id, item_type, target_text, czech_text, context_note, example_sentence_target, example_sentence_czech, phonetic_hint, audio_url, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `);
-          for (const it of data.items || []) {
-            insertItem.run(it.id, it.lesson_id, it.course_id, it.item_type, it.target_text, it.czech_text, it.context_note, it.example_sentence_target, it.example_sentence_czech, it.phonetic_hint || null, it.audio_url || null, it.created_at);
-          }
-
-          const insertState = db.prepare(`
-            INSERT OR IGNORE INTO user_item_states (id, user_id, learning_item_id, course_id, cz_to_target_state, cz_to_target_streak, cz_to_target_last_reviewed, cz_to_target_next_review, target_to_cz_state, target_to_cz_streak, target_to_cz_last_reviewed, target_to_cz_next_review, overall_state, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `);
-          for (const s of data.states || []) {
-            insertState.run(s.id, s.user_id, s.learning_item_id, s.course_id, s.cz_to_target_state, s.cz_to_target_streak, s.cz_to_target_last_reviewed || null, s.cz_to_target_next_review || null, s.target_to_cz_state, s.target_to_cz_streak, s.target_to_cz_last_reviewed || null, s.target_to_cz_next_review || null, s.overall_state, s.updated_at);
-          }
-
-          const insertExercise = db.prepare(`
-            INSERT OR IGNORE INTO lesson_exercises (id, lesson_id, exercise_type, prompt, target_language_context, options_json, canonical_answer, acceptable_synonyms_json, explanation)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `);
-          for (const ex of data.exercises || []) {
-            insertExercise.run(ex.id, ex.lesson_id, ex.exercise_type, ex.prompt, ex.target_language_context || null, ex.options_json || null, ex.canonical_answer, ex.acceptable_synonyms_json || null, ex.explanation);
-          }
-
-          const insertArticle = db.prepare(`
-            INSERT OR IGNORE INTO transfer_articles (id, lesson_id, title, body_text, questions_json, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-          `);
-          for (const art of data.articles || []) {
-            insertArticle.run(art.id, art.lesson_id, art.title, art.body_text, art.questions_json, art.created_at);
-          }
-
-          db.exec('COMMIT;');
-          console.log('Automated seed completed successfully!');
-        } catch (seedErr) {
-          db.exec('ROLLBACK;');
-          console.error('Failed to commit seed data:', seedErr);
-        }
+    console.log('Seeding / restoring missing core courses from data/seed-courses.json...');
+    db.exec('BEGIN TRANSACTION;');
+    try {
+      const insertCourse = db.prepare(`
+        INSERT OR IGNORE INTO courses (id, user_id, target_language, native_language, cefr_level, domain_area, status, total_lessons, completed_lessons_count, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const c of data.courses || []) {
+        insertCourse.run(c.id, c.user_id, c.target_language, c.native_language, c.cefr_level, c.domain_area, c.status, c.total_lessons, c.completed_lessons_count, c.created_at, c.updated_at);
       }
+
+      const insertOutline = db.prepare(`
+        INSERT OR IGNORE INTO curriculum_outlines (id, course_id, outline_json, is_approved, approved_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      for (const o of data.outlines || []) {
+        insertOutline.run(o.id, o.course_id, o.outline_json, o.is_approved, o.approved_at, o.created_at);
+      }
+
+      const insertLesson = db.prepare(`
+        INSERT OR IGNORE INTO lessons (id, course_id, lesson_number, title, theme_focus, article_title, article_body, listening_script, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const l of data.lessons || []) {
+        insertLesson.run(l.id, l.course_id, l.lesson_number, l.title, l.theme_focus, l.article_title, l.article_body, l.listening_script, l.status, l.created_at);
+      }
+
+      const insertItem = db.prepare(`
+        INSERT OR IGNORE INTO learning_items (id, lesson_id, course_id, item_type, target_text, czech_text, context_note, example_sentence_target, example_sentence_czech, phonetic_hint, audio_url, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const it of data.items || []) {
+        insertItem.run(it.id, it.lesson_id, it.course_id, it.item_type, it.target_text, it.czech_text, it.context_note, it.example_sentence_target, it.example_sentence_czech, it.phonetic_hint || null, it.audio_url || null, it.created_at);
+      }
+
+      const insertState = db.prepare(`
+        INSERT OR IGNORE INTO user_item_states (id, user_id, learning_item_id, course_id, cz_to_target_state, cz_to_target_streak, cz_to_target_last_reviewed, cz_to_target_next_review, target_to_cz_state, target_to_cz_streak, target_to_cz_last_reviewed, target_to_cz_next_review, overall_state, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const s of data.states || []) {
+        insertState.run(s.id, s.user_id, s.learning_item_id, s.course_id, s.cz_to_target_state, s.cz_to_target_streak, s.cz_to_target_last_reviewed || null, s.cz_to_target_next_review || null, s.target_to_cz_state, s.target_to_cz_streak, s.target_to_cz_last_reviewed || null, s.target_to_cz_next_review || null, s.overall_state, s.updated_at);
+      }
+
+      const insertExercise = db.prepare(`
+        INSERT OR IGNORE INTO lesson_exercises (id, lesson_id, exercise_type, prompt, target_language_context, options_json, canonical_answer, acceptable_synonyms_json, explanation)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const ex of data.exercises || []) {
+        insertExercise.run(ex.id, ex.lesson_id, ex.exercise_type, ex.prompt, ex.target_language_context || null, ex.options_json || null, ex.canonical_answer, ex.acceptable_synonyms_json || null, ex.explanation);
+      }
+
+      const insertArticle = db.prepare(`
+        INSERT OR IGNORE INTO transfer_articles (id, lesson_id, title, body_text, questions_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      for (const art of data.articles || []) {
+        insertArticle.run(art.id, art.lesson_id, art.title, art.body_text, art.questions_json, art.created_at);
+      }
+
+      db.exec('COMMIT;');
+      console.log('Automated seed/restore completed successfully!');
+    } catch (seedErr) {
+      db.exec('ROLLBACK;');
+      console.error('Failed to commit seed data:', seedErr);
     }
   } catch (err) {
-    console.error('Error in seedIfEmpty:', err);
+    console.error('Error in ensureSeedCourses:', err);
   }
 }

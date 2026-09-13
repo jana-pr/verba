@@ -17,19 +17,85 @@ export interface ClientVault {
   attemptLogs: any[];
 }
 
+export const DEFAULT_PRESET_COURSES: any[] = [
+  {
+    id: 'crs_business_analyza_b2',
+    user_id: 'usr_jana_default',
+    target_language: 'en',
+    native_language: 'cs',
+    cefr_level: 'B2',
+    domain_area: 'Business analýza',
+    status: 'ready',
+    total_lessons: 50,
+    completed_lessons_count: 50,
+    created_at: '2026-09-13T10:50:48.879Z',
+    updated_at: '2026-09-13T10:50:48.879Z',
+  },
+  {
+    id: 'crs_project_management_b2',
+    user_id: 'usr_jana_default',
+    target_language: 'en',
+    native_language: 'cs',
+    cefr_level: 'B2',
+    domain_area: 'Project Management',
+    status: 'ready',
+    total_lessons: 50,
+    completed_lessons_count: 50,
+    created_at: '2026-09-13T10:50:48.879Z',
+    updated_at: '2026-09-13T10:50:48.879Z',
+  },
+  {
+    id: 'crs_product_management_b2',
+    user_id: 'usr_jana_default',
+    target_language: 'en',
+    native_language: 'cs',
+    cefr_level: 'B2',
+    domain_area: 'Product Management',
+    status: 'ready',
+    total_lessons: 50,
+    completed_lessons_count: 50,
+    created_at: '2026-09-13T10:50:48.879Z',
+    updated_at: '2026-09-13T10:50:48.879Z',
+  },
+  {
+    id: 'crs_software_engineering_b2',
+    user_id: 'usr_jana_default',
+    target_language: 'en',
+    native_language: 'cs',
+    cefr_level: 'B2',
+    domain_area: 'Software Engineering',
+    status: 'ready',
+    total_lessons: 50,
+    completed_lessons_count: 50,
+    created_at: '2026-09-13T10:50:48.879Z',
+    updated_at: '2026-09-13T10:50:48.879Z',
+  },
+];
+
 export function getClientVault(): ClientVault {
   if (typeof window === 'undefined') {
-    return { version: '1.2', lastUpdated: '', courses: [], states: [], attemptLogs: [] };
+    return { version: '1.2', lastUpdated: '', courses: DEFAULT_PRESET_COURSES, states: [], attemptLogs: [] };
   }
   try {
     const raw = localStorage.getItem(VAULT_KEY);
     if (raw) {
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      // Ensure all default preset courses are always merged into vault courses
+      const map = new Map<string, any>(DEFAULT_PRESET_COURSES.map(c => [c.id, c]));
+      for (const vc of parsed.courses || []) {
+        if (vc && vc.id) {
+          map.set(vc.id, { ...map.get(vc.id), ...vc });
+        }
+      }
+      return {
+        ...parsed,
+        courses: Array.from(map.values()),
+      };
     }
   } catch (e) {
     console.warn('Error reading client vault:', e);
   }
-  return { version: '1.2', lastUpdated: '', courses: [], states: [], attemptLogs: [] };
+  return { version: '1.2', lastUpdated: '', courses: DEFAULT_PRESET_COURSES, states: [], attemptLogs: [] };
 }
 
 export function saveClientVault(vault: Partial<ClientVault>) {
@@ -39,7 +105,7 @@ export function saveClientVault(vault: Partial<ClientVault>) {
     const updated: ClientVault = {
       version: '1.2',
       lastUpdated: new Date().toISOString(),
-      courses: vault.courses || current.courses || [],
+      courses: vault.courses || current.courses || DEFAULT_PRESET_COURSES,
       states: vault.states || current.states || [],
       attemptLogs: vault.attemptLogs || current.attemptLogs || [],
     };
@@ -47,6 +113,31 @@ export function saveClientVault(vault: Partial<ClientVault>) {
   } catch (e) {
     console.warn('Error saving client vault:', e);
   }
+}
+
+/**
+ * Merges server courses with local client storage and default core presets
+ */
+export function getAllMergedCourses(serverCourses: any[] = []): any[] {
+  const map = new Map<string, any>();
+  // 1. Core default presets
+  for (const c of DEFAULT_PRESET_COURSES) {
+    map.set(c.id, c);
+  }
+  // 2. Server courses
+  for (const sc of serverCourses) {
+    if (sc && sc.id) {
+      map.set(sc.id, { ...map.get(sc.id), ...sc });
+    }
+  }
+  // 3. Client vault
+  const vault = getClientVault();
+  for (const vc of vault.courses || []) {
+    if (vc && vc.id) {
+      map.set(vc.id, { ...map.get(vc.id), ...vc });
+    }
+  }
+  return Array.from(map.values());
 }
 
 /**
@@ -61,10 +152,14 @@ export function markCourseAsOpened(courseId: string, fullCourseData?: any) {
     // 2. Track opened courses list
     const rawOpened = localStorage.getItem(OPENED_COURSES_KEY);
     const openedList: string[] = rawOpened ? JSON.parse(rawOpened) : [];
+    // Ensure all 4 defaults are also in opened list
+    DEFAULT_PRESET_COURSES.forEach(c => {
+      if (!openedList.includes(c.id)) openedList.push(c.id);
+    });
     if (!openedList.includes(courseId)) {
       openedList.unshift(courseId);
-      localStorage.setItem(OPENED_COURSES_KEY, JSON.stringify(openedList));
     }
+    localStorage.setItem(OPENED_COURSES_KEY, JSON.stringify(openedList));
 
     // 3. Cache course in vault if full data is provided
     if (fullCourseData) {
@@ -83,12 +178,16 @@ export function markCourseAsOpened(courseId: string, fullCourseData?: any) {
 }
 
 export function getOpenedCourseIds(): string[] {
-  if (typeof window === 'undefined') return [];
+  if (typeof window === 'undefined') return DEFAULT_PRESET_COURSES.map(c => c.id);
   try {
     const raw = localStorage.getItem(OPENED_COURSES_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const list: string[] = raw ? JSON.parse(raw) : [];
+    DEFAULT_PRESET_COURSES.forEach(c => {
+      if (!list.includes(c.id)) list.push(c.id);
+    });
+    return list;
   } catch {
-    return [];
+    return DEFAULT_PRESET_COURSES.map(c => c.id);
   }
 }
 

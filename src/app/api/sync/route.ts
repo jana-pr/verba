@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb, DEFAULT_USER_ID } from '@/lib/db';
+import { getDb, DEFAULT_USER_ID, ensureSeedCourses } from '@/lib/db';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -16,6 +16,7 @@ export async function POST(req: NextRequest) {
     const { clientCourses = [], clientStates = [], clientLogs = [] } = body;
 
     const db = getDb();
+    ensureSeedCourses(db);
     db.exec('PRAGMA foreign_keys = ON;');
     db.exec('BEGIN TRANSACTION;');
 

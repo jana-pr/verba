@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { generateGptCoursePrompt } from '@/lib/gpt-course-prompt';
+import { getAllMergedCourses } from '@/lib/client-storage';
 import { 
   Sparkles, 
   Copy, 
@@ -27,19 +28,19 @@ export default function NewCoursePage() {
   // Active Tab: 'import' (paste json) | 'prompt' (export prompt) | 'presets' (predefined courses)
   const [activeTab, setActiveTab] = useState<'import' | 'prompt' | 'presets'>('import');
 
-  // Dynamic prepared courses from DB
-  const [preparedCourses, setPreparedCourses] = useState<any[]>([]);
-  const [loadingPresets, setLoadingPresets] = useState(true);
+  // Dynamic prepared courses from DB & local vault
+  const [preparedCourses, setPreparedCourses] = useState<any[]>(() => getAllMergedCourses());
+  const [loadingPresets, setLoadingPresets] = useState(false);
 
   const fetchPreparedCourses = async () => {
     try {
       const res = await fetch('/api/courses');
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        setPreparedCourses(data);
-      }
+      const data = res.ok ? await res.json() : [];
+      const merged = getAllMergedCourses(Array.isArray(data) ? data : []);
+      setPreparedCourses(merged);
     } catch (e) {
       console.error('Error fetching prepared courses:', e);
+      setPreparedCourses(getAllMergedCourses());
     } finally {
       setLoadingPresets(false);
     }

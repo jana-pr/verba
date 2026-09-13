@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb, DEFAULT_USER_ID } from '@/lib/db';
+import { getDb, DEFAULT_USER_ID, ensureSeedCourses } from '@/lib/db';
 import { generateCurriculumOutline } from '@/lib/ai/course-generator';
 import crypto from 'node:crypto';
 
 export async function GET() {
   try {
     const db = getDb();
+    ensureSeedCourses(db);
     const stmt = db.prepare(`
       SELECT * FROM courses 
       WHERE user_id = ? 
