@@ -1,4 +1,5 @@
 import { CurriculumLessonOutline, LearningItem, Lesson, LessonExercise, TransferArticle } from '../db/schema';
+import { getCuratedLessonData } from './lesson-lexicons';
 
 export interface GeneratedLessonData {
   lesson: Omit<Lesson, 'id' | 'course_id' | 'created_at'>;
@@ -49,7 +50,7 @@ export async function generateLessonContent(
     }
   }
 
-  return generateLessonTemplate(lessonNumber, lessonOutline, domainArea, cefrLevel);
+  return getCuratedLessonData(lessonNumber, lessonOutline, domainArea, cefrLevel);
 }
 
 // -------------------------------------------------------------
