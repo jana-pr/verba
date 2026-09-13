@@ -16,13 +16,15 @@ import {
   TrendingUp,
   Brain,
   ChevronRight,
-  BookA
+  BookA,
+  GraduationCap
 } from 'lucide-react';
 
 import { getLastActiveCourseId, markCourseAsOpened, getAllMergedCourses, getOpenedCourses } from '@/lib/client-storage';
 
 export default function HomePage() {
   const [courses, setCourses] = useState<Course[]>(() => getAllMergedCourses());
+  const [openedCourses, setOpenedCourses] = useState<Course[]>(() => getOpenedCourses(getAllMergedCourses()));
   const [activeCourse, setActiveCourse] = useState<Course | null>(() => {
     const all = getAllMergedCourses();
     const opened = getOpenedCourses(all);
@@ -45,6 +47,7 @@ export default function HomePage() {
 
         const savedActiveId = getLastActiveCourseId();
         const opened = getOpenedCourses(merged);
+        setOpenedCourses(opened);
         const targetCourse = (savedActiveId && merged.find((c) => c.id === savedActiveId)) || opened[0] || merged[0] || null;
         setActiveCourse(targetCourse);
 
@@ -215,6 +218,53 @@ export default function HomePage() {
                 </span>
               </div>
             )}
+          </div>
+        )}
+
+        {/* MÉ OTEVŘENÉ KURZY - RYCHLÝ PŘEPÍNAČ */}
+        {openedCourses && openedCourses.length > 0 && (
+          <div className="verba-card p-3.5 sm:p-4 bg-white border-slate-200/80 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <GraduationCap className="w-4 h-4 text-verba-indigo" />
+                <span className="text-xs font-bold text-verba-ink">Mé otevřené kurzy ({openedCourses.length})</span>
+              </div>
+              <Link 
+                href="/courses/my" 
+                className="text-[11px] font-semibold text-verba-indigo hover:underline flex items-center gap-1"
+              >
+                <span>Celý přehled Mých kurzů</span>
+                <ArrowRight className="w-3 h-3" />
+              </Link>
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+              {openedCourses.map((c) => {
+                const isCurrent = c.id === activeCourse?.id;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveCourse(c);
+                      markCourseAsOpened(c.id, c);
+                      window.location.href = `/courses/${c.id}`;
+                    }}
+                    className={`p-2.5 rounded-xl border text-left transition-all ${
+                      isCurrent 
+                        ? 'border-verba-indigo bg-indigo-50/70 shadow-2xs' 
+                        : 'border-slate-200 bg-white hover:border-indigo-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between text-[10px] text-verba-slate mb-0.5">
+                      <span className="font-bold text-verba-indigo uppercase">{c.target_language} • {c.cefr_level}</span>
+                      {isCurrent && <span className="text-[9px] text-verba-indigo font-bold">✓ Aktivní</span>}
+                    </div>
+                    <div className="text-xs font-bold text-verba-ink truncate">{c.domain_area}</div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
 

@@ -80,14 +80,43 @@ export default function LessonDetailPage({
           direction: 'cz_to_target',
           user_answer: answer,
           canonical_answer: ex.canonical_answer,
-          acceptable_synonyms: ex.acceptable_synonyms,
-          exercise_type: ex.exercise_type,
+          acceptable_synonyms: ex.acceptable_synonyms || [],
+          exercise_type: ex.exercise_type || 'choice',
         }),
       });
       const result = await res.json();
-      setExerciseResults((prev) => ({ ...prev, [ex.id]: result.evaluation }));
+      if (res.ok && result?.evaluation) {
+        setExerciseResults((prev) => ({ ...prev, [ex.id]: result.evaluation }));
+      } else {
+        const cleanUser = answer.trim().toLowerCase().replace(/[.,!?;:"'(){}\[\]]/g, '').replace(/\s+/g, ' ');
+        const cleanCanon = (ex.canonical_answer || '').trim().toLowerCase().replace(/[.,!?;:"'(){}\[\]]/g, '').replace(/\s+/g, ' ');
+        const isCorrect = cleanUser === cleanCanon;
+        setExerciseResults((prev) => ({
+          ...prev,
+          [ex.id]: {
+            isCorrect,
+            verdict: isCorrect ? 'correct' : 'incorrect',
+            feedback: isCorrect ? 'Správně.' : `Doporučená odpověď: ${ex.canonical_answer}`,
+            score: isCorrect ? 1 : 0,
+            recommendedAnswer: ex.canonical_answer,
+          }
+        }));
+      }
     } catch (e) {
       console.error(e);
+      const cleanUser = answer.trim().toLowerCase().replace(/[.,!?;:"'(){}\[\]]/g, '').replace(/\s+/g, ' ');
+      const cleanCanon = (ex.canonical_answer || '').trim().toLowerCase().replace(/[.,!?;:"'(){}\[\]]/g, '').replace(/\s+/g, ' ');
+      const isCorrect = cleanUser === cleanCanon;
+      setExerciseResults((prev) => ({
+        ...prev,
+        [ex.id]: {
+          isCorrect,
+          verdict: isCorrect ? 'correct' : 'incorrect',
+          feedback: isCorrect ? 'Správně.' : `Doporučená odpověď: ${ex.canonical_answer}`,
+          score: isCorrect ? 1 : 0,
+          recommendedAnswer: ex.canonical_answer,
+        }
+      }));
     }
   };
 
@@ -282,7 +311,7 @@ export default function LessonDetailPage({
         {/* TAB 3: ARTICLE (Sekce 16 Reader UI) */}
         {activeTab === 'article' && (
           <div className="verba-card p-6 sm:p-8 space-y-6 max-w-3xl mx-auto">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
               <div>
                 <span className="text-[11px] font-semibold text-verba-slate uppercase tracking-wider">
                   Profesní článek lekce
@@ -291,7 +320,10 @@ export default function LessonDetailPage({
                   {lesson.article_title}
                 </h2>
               </div>
-              <AudioButton text={lesson.article_body} size="md" />
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-verba-slate hidden sm:inline">Hlasité čtení:</span>
+                <AudioButton text={lesson.article_body} size="md" />
+              </div>
             </div>
 
             <div className="text-sm sm:text-base text-verba-ink leading-relaxed space-y-4 font-normal">
@@ -305,7 +337,7 @@ export default function LessonDetailPage({
         {/* TAB 4: LISTENING */}
         {activeTab === 'listening' && (
           <div className="verba-card p-6 sm:p-8 space-y-6 max-w-3xl mx-auto">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
               <div>
                 <span className="text-[11px] font-semibold text-verba-slate uppercase tracking-wider">
                   Listening & Comprehension
@@ -314,7 +346,10 @@ export default function LessonDetailPage({
                   Poslechový scénář
                 </h2>
               </div>
-              <AudioButton text={lesson.listening_script} size="md" />
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-verba-slate hidden sm:inline">Hlasitý poslech:</span>
+                <AudioButton text={lesson.listening_script} size="md" />
+              </div>
             </div>
 
             <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 text-sm text-verba-slate leading-relaxed">

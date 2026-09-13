@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Volume2, VolumeX, Loader2 } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Volume2, Square } from 'lucide-react';
 
 interface AudioButtonProps {
   text: string;
@@ -17,12 +17,34 @@ export const AudioButton: React.FC<AudioButtonProps> = ({
   size = 'md',
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const handlePlay = async (e: React.MouseEvent) => {
+  const stopAudio = () => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+    setIsPlaying(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      stopAudio();
+    };
+  }, []);
+
+  const handleToggle = async (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
 
-    if (isPlaying) return;
+    if (isPlaying) {
+      stopAudio();
+      return;
+    }
+
     setIsPlaying(true);
 
     try {
@@ -52,7 +74,11 @@ export const AudioButton: React.FC<AudioButtonProps> = ({
   const fallbackAudio = async () => {
     try {
       const audioUrl = `/api/tts?text=${encodeURIComponent(text)}&lang=${encodeURIComponent(lang)}`;
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
       const audio = new Audio(audioUrl);
+      audioRef.current = audio;
       audio.onended = () => setIsPlaying(false);
       audio.onerror = () => setIsPlaying(false);
       await audio.play();
@@ -66,16 +92,17 @@ export const AudioButton: React.FC<AudioButtonProps> = ({
   return (
     <button
       type="button"
-      onClick={handlePlay}
-      disabled={isPlaying}
-      className={`inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-verba-slate hover:text-verba-indigo hover:border-indigo-200 transition-colors shadow-2xs active:scale-95 ${
-        isSm ? 'p-1.5' : 'p-2'
-      } ${className}`}
-      title="Přehrát výslovnost"
-      aria-label="Přehrát výslovnost"
+      onClick={handleToggle}
+      className={`inline-flex items-center justify-center rounded-lg border transition-all shadow-2xs active:scale-95 ${
+        isPlaying
+          ? 'border-rose-300 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:border-rose-400 animate-pulse'
+          : 'border-slate-200 bg-white text-verba-slate hover:text-verba-indigo hover:border-indigo-200'
+      } ${isSm ? 'p-1.5' : 'p-2'} ${className}`}
+      title={isPlaying ? 'Zastavit přehrávání' : 'Přehrát výslovnost'}
+      aria-label={isPlaying ? 'Zastavit přehrávání' : 'Přehrát výslovnost'}
     >
       {isPlaying ? (
-        <Loader2 className={`${isSm ? 'w-3.5 h-3.5' : 'w-4 h-4'} animate-spin text-verba-indigo`} />
+        <Square className={`${isSm ? 'w-3 h-3' : 'w-3.5 h-3.5'} fill-current`} />
       ) : (
         <Volume2 className={`${isSm ? 'w-3.5 h-3.5' : 'w-4 h-4'}`} />
       )}

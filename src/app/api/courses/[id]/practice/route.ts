@@ -140,7 +140,33 @@ export async function POST(
       acceptable_synonyms
     );
 
-    // 2. Fetch current user item state
+    // 2. Check if learning_item_id and course actually exist in SQLite
+    let itemExists = false;
+    let courseExists = false;
+
+    if (learning_item_id) {
+      const itemCheck = db.prepare('SELECT id FROM learning_items WHERE id = ?').get(learning_item_id);
+      itemExists = Boolean(itemCheck);
+      const courseCheck = db.prepare('SELECT id FROM courses WHERE id = ?').get(id);
+      courseExists = Boolean(courseCheck);
+    }
+
+    // If item or course doesn't exist in DB (e.g. lesson exercise, client-side course), return evaluation immediately
+    if (!itemExists || !courseExists) {
+      return NextResponse.json({
+        evaluation,
+        masteryUpdate: {
+          direction: direction || 'cz_to_target',
+          previousState: 'new',
+          newState: evaluation.isCorrect ? 'learning' : 'new',
+          streak: evaluation.isCorrect ? 1 : 0,
+          overallState: evaluation.isCorrect ? 'learning' : 'new',
+          isDemoted: false,
+        },
+      });
+    }
+
+    // 3. Fetch current user item state
     const stateStmt = db.prepare(`
       SELECT * FROM user_item_states 
       WHERE user_id = ? AND learning_item_id = ?
@@ -168,7 +194,7 @@ export async function POST(
       };
     }
 
-    // 3. Compute Spaced Repetition update for the specific direction tested
+    // 4. Compute Spaced Repetition update for the specific direction tested
     const isCzToTarget = direction === 'cz_to_target';
     const currentDirectionState = (isCzToTarget ? userState.cz_to_target_state : userState.target_to_cz_state) as LearningState;
     const currentDirectionStreak = isCzToTarget ? userState.cz_to_target_streak : userState.target_to_cz_streak;
@@ -186,9 +212,9 @@ export async function POST(
 
     const newOverallState = calculateOverallState(newCzState, newTargetState);
 
-    // 4. Transactionally save attempt log and update state
-    db.exec('BEGIN TRANSACTION;');
+    // 5. Transactionally save attempt log and update state
     try {
+      db.exec('BEGIN TRANSACTION;');
       // A. Append to attempt_logs (Append-only — NEVER deleted)
       const logStmt = db.prepare(`
         INSERT INTO attempt_logs (
@@ -236,8 +262,8 @@ export async function POST(
 
       db.exec('COMMIT;');
     } catch (txError) {
-      db.exec('ROLLBACK;');
-      throw txError;
+      try { db.exec('ROLLBACK;'); } catch {}
+      console.warn('Non-critical attempt logging error:', txError);
     }
 
     return NextResponse.json({
@@ -252,7 +278,7 @@ export async function POST(
       },
     });
   } catch (error) {
-    console.error('Error logging practice attempt:', error);
+    console.error('Error processing evaluation request:', error);
     return NextResponse.json({ error: 'Failed to process attempt' }, { status: 500 });
   }
 }

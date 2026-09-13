@@ -23,7 +23,9 @@ import {
   BarChart3, 
   Home, 
   Sparkles,
-  Check
+  Check,
+  GraduationCap,
+  ArrowRight
 } from 'lucide-react';
 import { MobileQrModal } from '../mobile/MobileQrModal';
 import { Course } from '@/lib/db/schema';
@@ -269,6 +271,19 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               <VerbaLogo size="sm" showWordmark={true} />
             </Link>
 
+            {/* Direct button to My Courses */}
+            <Link
+              href="/courses/my"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/50 bg-white text-xs font-semibold text-verba-ink transition-colors shadow-2xs shrink-0"
+              title="Zobrazit přehled všech otevřených kurzů"
+            >
+              <GraduationCap className="w-3.5 h-3.5 text-verba-indigo shrink-0" />
+              <span className="hidden sm:inline">Mé kurzy</span>
+              <span className="px-1.5 py-0.2 rounded-full bg-indigo-50 text-verba-indigo text-[10px] font-bold">
+                {openedCourses.length}
+              </span>
+            </Link>
+
             {/* Course Switcher Pill */}
             <div className="relative">
               <button
@@ -297,8 +312,20 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     className="absolute left-0 mt-1.5 w-80 max-w-[90vw] bg-white rounded-xl shadow-xl border border-slate-100 py-1.5 z-50 animate-in fade-in slide-in-from-top-1"
                   >
                     <div className="px-3 py-1.5 text-[10px] font-semibold text-verba-slate uppercase tracking-wider flex items-center justify-between border-b border-slate-50 pb-1.5 mb-1">
-                      <span>Mé kurzy ({openedCourses.length})</span>
-                      <span className="text-[9px] text-verba-indigo font-normal">Aktuálně otevřené</span>
+                      <Link 
+                        href="/courses/my" 
+                        onClick={() => setIsDropdownOpen(false)}
+                        className="hover:text-verba-indigo flex items-center gap-1"
+                      >
+                        <span>Mé kurzy ({openedCourses.length})</span>
+                      </Link>
+                      <Link 
+                        href="/courses/my"
+                        onClick={() => setIsDropdownOpen(false)}
+                        className="text-[9px] text-verba-indigo font-normal hover:underline"
+                      >
+                        Celý přehled &rarr;
+                      </Link>
                     </div>
 
                     <div className="max-h-72 overflow-y-auto divide-y divide-slate-50">
@@ -584,6 +611,20 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 >
                   <Home className="w-4 h-4 text-verba-slate" />
                   <span>Domů</span>
+                </Link>
+
+                <Link
+                  href="/courses/my"
+                  onClick={() => setIsMobileDrawerOpen(false)}
+                  className="flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-verba-indigo bg-indigo-50/50 hover:bg-indigo-50"
+                >
+                  <div className="flex items-center gap-3">
+                    <GraduationCap className="w-4 h-4 text-verba-indigo" />
+                    <span>Mé kurzy</span>
+                  </div>
+                  <span className="px-1.5 py-0.2 rounded-full bg-indigo-100 text-verba-indigo text-[10px] font-bold">
+                    {openedCourses.length}
+                  </span>
                 </Link>
 
                 {currentCourse && (

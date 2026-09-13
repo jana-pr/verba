@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { generateGptCoursePrompt } from '@/lib/gpt-course-prompt';
@@ -28,7 +29,8 @@ import {
   FileText,
   Trash2,
   X,
-  Plus
+  Plus,
+  GraduationCap
 } from 'lucide-react';
 
 export default function NewCoursePage() {
@@ -407,6 +409,14 @@ export default function NewCoursePage() {
             <Layers className="w-4 h-4" />
             <span>Předpřipravené kurzy</span>
           </button>
+
+          <Link
+            href="/courses/my"
+            className="flex items-center gap-2 py-2.5 px-3.5 border-b-2 font-semibold text-xs transition-colors whitespace-nowrap border-transparent text-verba-indigo hover:text-verba-indigo-dark bg-indigo-50/40 rounded-t-lg ml-auto"
+          >
+            <GraduationCap className="w-4 h-4 text-verba-indigo" />
+            <span>Mé kurzy ({openedCourseIds.length}) &rarr;</span>
+          </Link>
         </div>
 
         {/* TAB 1: IMPORT FROM GPT JSON */}

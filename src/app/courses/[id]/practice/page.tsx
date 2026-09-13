@@ -75,6 +75,18 @@ export default function PracticePage({
     }
   }, [isSessionActive, currentIndex, feedback]);
 
+  // Handle Enter key when feedback is displayed to quickly continue
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter' && feedback) {
+        e.preventDefault();
+        handleContinue();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [feedback, currentIndex, cards]);
+
   const handleCheck = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!currentCard || !userAnswer.trim() || isSubmitting || feedback) return;
@@ -95,22 +107,51 @@ export default function PracticePage({
       });
 
       const data = await res.json();
-      setFeedback(data);
 
-      if (data.masteryUpdate) {
-        recordStateProgress({
-          learning_item_id: currentCard.id,
-          course_id: id,
-          cz_to_target_state: currentCard.direction === 'cz_to_target' ? data.masteryUpdate.newState : currentCard.cz_to_target_state,
-          cz_to_target_streak: currentCard.direction === 'cz_to_target' ? data.masteryUpdate.streak : currentCard.cz_to_target_streak,
-          target_to_cz_state: currentCard.direction === 'target_to_cz' ? data.masteryUpdate.newState : currentCard.target_to_cz_state,
-          target_to_cz_streak: currentCard.direction === 'target_to_cz' ? data.masteryUpdate.streak : currentCard.target_to_cz_streak,
-          overall_state: data.masteryUpdate.overallState,
-          updated_at: new Date().toISOString(),
+      if (res.ok && data?.evaluation) {
+        setFeedback(data);
+
+        if (data.masteryUpdate) {
+          recordStateProgress({
+            learning_item_id: currentCard.id,
+            course_id: id,
+            cz_to_target_state: currentCard.direction === 'cz_to_target' ? data.masteryUpdate.newState : currentCard.cz_to_target_state,
+            cz_to_target_streak: currentCard.direction === 'cz_to_target' ? data.masteryUpdate.streak : currentCard.cz_to_target_streak,
+            target_to_cz_state: currentCard.direction === 'target_to_cz' ? data.masteryUpdate.newState : currentCard.target_to_cz_state,
+            target_to_cz_streak: currentCard.direction === 'target_to_cz' ? data.masteryUpdate.streak : currentCard.target_to_cz_streak,
+            overall_state: data.masteryUpdate.overallState,
+            updated_at: new Date().toISOString(),
+          });
+        }
+      } else {
+        // Robust fallback evaluation if server is unreachable or returned error
+        const cleanUser = userAnswer.trim().toLowerCase().replace(/[.,!?;:"'(){}\[\]]/g, '').replace(/\s+/g, ' ');
+        const cleanCanon = (currentCard.canonical_answer || '').trim().toLowerCase().replace(/[.,!?;:"'(){}\[\]]/g, '').replace(/\s+/g, ' ');
+        const isMatch = cleanUser === cleanCanon;
+        setFeedback({
+          evaluation: {
+            isCorrect: isMatch,
+            feedback: isMatch ? 'Správně.' : `Doporučená formulace: „${currentCard.canonical_answer}“.`,
+            score: isMatch ? 1 : 0,
+            verdict: isMatch ? 'correct' : 'incorrect',
+            recommendedAnswer: currentCard.canonical_answer,
+          }
         });
       }
     } catch (err) {
-      console.error(err);
+      console.error('Check answer error, applying fallback:', err);
+      const cleanUser = userAnswer.trim().toLowerCase().replace(/[.,!?;:"'(){}\[\]]/g, '').replace(/\s+/g, ' ');
+      const cleanCanon = (currentCard.canonical_answer || '').trim().toLowerCase().replace(/[.,!?;:"'(){}\[\]]/g, '').replace(/\s+/g, ' ');
+      const isMatch = cleanUser === cleanCanon;
+      setFeedback({
+        evaluation: {
+          isCorrect: isMatch,
+          feedback: isMatch ? 'Správně.' : `Doporučená formulace: „${currentCard.canonical_answer}“.`,
+          score: isMatch ? 1 : 0,
+          verdict: isMatch ? 'correct' : 'incorrect',
+          recommendedAnswer: currentCard.canonical_answer,
+        }
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -321,7 +362,7 @@ export default function PracticePage({
                 spellCheck="false"
                 className={`w-full px-4 py-3.5 rounded-xl border text-sm font-medium transition-colors focus:outline-hidden ${
                   feedback
-                    ? feedback.evaluation.isCorrect
+                    ? feedback.evaluation?.isCorrect
                       ? 'border-emerald-300 bg-emerald-50/20 text-emerald-950'
                       : 'border-rose-300 bg-rose-50/20 text-rose-950'
                     : 'border-slate-300 bg-white text-verba-ink focus:border-verba-indigo focus:ring-1 focus:ring-verba-indigo'
@@ -330,7 +371,7 @@ export default function PracticePage({
             </div>
 
             {/* Calm, Non-punishing Feedback Banner (Sekce 25) */}
-            {feedback && (
+            {feedback && feedback.evaluation && (
               <div
                 className={`p-4 rounded-xl border text-xs space-y-1 animate-in fade-in duration-150 ${
                   feedback.evaluation.isCorrect

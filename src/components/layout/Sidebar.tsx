@@ -14,7 +14,8 @@ import {
   PlusCircle, 
   CheckSquare,
   QrCode,
-  BookOpen
+  BookOpen,
+  GraduationCap
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -27,6 +28,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentCourseId, onOpenQr }) =
 
   const navItems = [
     { label: 'Domů', href: '/', icon: Home, matchExact: true },
+    { label: 'Mé kurzy', href: '/courses/my', icon: GraduationCap, matchExact: false },
     ...(currentCourseId
       ? [
           { label: 'Lekce kurzu', href: `/courses/${currentCourseId}`, icon: Layers },
