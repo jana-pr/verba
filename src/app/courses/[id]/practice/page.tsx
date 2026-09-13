@@ -4,14 +4,15 @@ import React, { useEffect, useState, use, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FocusLayout } from '@/components/layout/FocusLayout';
 import { AudioButton } from '@/components/practice/AudioButton';
+import { markCourseAsOpened, recordStateProgress } from '@/lib/client-storage';
 import { 
   Check, 
   ArrowRight, 
   Volume2, 
   RotateCw, 
-  Sparkles,
-  FileText,
-  Dumbbell
+  Sparkles, 
+  FileText, 
+  Dumbbell 
 } from 'lucide-react';
 
 export default function PracticePage({
@@ -95,6 +96,19 @@ export default function PracticePage({
 
       const data = await res.json();
       setFeedback(data);
+
+      if (data.masteryUpdate) {
+        recordStateProgress({
+          learning_item_id: currentCard.id,
+          course_id: id,
+          cz_to_target_state: currentCard.direction === 'cz_to_target' ? data.masteryUpdate.newState : currentCard.cz_to_target_state,
+          cz_to_target_streak: currentCard.direction === 'cz_to_target' ? data.masteryUpdate.streak : currentCard.cz_to_target_streak,
+          target_to_cz_state: currentCard.direction === 'target_to_cz' ? data.masteryUpdate.newState : currentCard.target_to_cz_state,
+          target_to_cz_streak: currentCard.direction === 'target_to_cz' ? data.masteryUpdate.streak : currentCard.target_to_cz_streak,
+          overall_state: data.masteryUpdate.overallState,
+          updated_at: new Date().toISOString(),
+        });
+      }
     } catch (err) {
       console.error(err);
     } finally {

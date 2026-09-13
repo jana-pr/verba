@@ -177,7 +177,7 @@ function seedIfEmpty(db: DatabaseSync) {
         db.exec('BEGIN TRANSACTION;');
         try {
           const insertCourse = db.prepare(`
-            INSERT OR REPLACE INTO courses (id, user_id, target_language, native_language, cefr_level, domain_area, status, total_lessons, completed_lessons_count, created_at, updated_at)
+            INSERT OR IGNORE INTO courses (id, user_id, target_language, native_language, cefr_level, domain_area, status, total_lessons, completed_lessons_count, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `);
           for (const c of data.courses || []) {
@@ -185,7 +185,7 @@ function seedIfEmpty(db: DatabaseSync) {
           }
 
           const insertOutline = db.prepare(`
-            INSERT OR REPLACE INTO curriculum_outlines (id, course_id, outline_json, is_approved, approved_at, created_at)
+            INSERT OR IGNORE INTO curriculum_outlines (id, course_id, outline_json, is_approved, approved_at, created_at)
             VALUES (?, ?, ?, ?, ?, ?)
           `);
           for (const o of data.outlines || []) {
@@ -193,7 +193,7 @@ function seedIfEmpty(db: DatabaseSync) {
           }
 
           const insertLesson = db.prepare(`
-            INSERT OR REPLACE INTO lessons (id, course_id, lesson_number, title, theme_focus, article_title, article_body, listening_script, status, created_at)
+            INSERT OR IGNORE INTO lessons (id, course_id, lesson_number, title, theme_focus, article_title, article_body, listening_script, status, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `);
           for (const l of data.lessons || []) {
@@ -201,7 +201,7 @@ function seedIfEmpty(db: DatabaseSync) {
           }
 
           const insertItem = db.prepare(`
-            INSERT OR REPLACE INTO learning_items (id, lesson_id, course_id, item_type, target_text, czech_text, context_note, example_sentence_target, example_sentence_czech, phonetic_hint, audio_url, created_at)
+            INSERT OR IGNORE INTO learning_items (id, lesson_id, course_id, item_type, target_text, czech_text, context_note, example_sentence_target, example_sentence_czech, phonetic_hint, audio_url, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `);
           for (const it of data.items || []) {
@@ -209,7 +209,7 @@ function seedIfEmpty(db: DatabaseSync) {
           }
 
           const insertState = db.prepare(`
-            INSERT OR REPLACE INTO user_item_states (id, user_id, learning_item_id, course_id, cz_to_target_state, cz_to_target_streak, cz_to_target_last_reviewed, cz_to_target_next_review, target_to_cz_state, target_to_cz_streak, target_to_cz_last_reviewed, target_to_cz_next_review, overall_state, updated_at)
+            INSERT OR IGNORE INTO user_item_states (id, user_id, learning_item_id, course_id, cz_to_target_state, cz_to_target_streak, cz_to_target_last_reviewed, cz_to_target_next_review, target_to_cz_state, target_to_cz_streak, target_to_cz_last_reviewed, target_to_cz_next_review, overall_state, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `);
           for (const s of data.states || []) {
@@ -217,7 +217,7 @@ function seedIfEmpty(db: DatabaseSync) {
           }
 
           const insertExercise = db.prepare(`
-            INSERT OR REPLACE INTO lesson_exercises (id, lesson_id, exercise_type, prompt, target_language_context, options_json, canonical_answer, acceptable_synonyms_json, explanation)
+            INSERT OR IGNORE INTO lesson_exercises (id, lesson_id, exercise_type, prompt, target_language_context, options_json, canonical_answer, acceptable_synonyms_json, explanation)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           `);
           for (const ex of data.exercises || []) {
@@ -225,7 +225,7 @@ function seedIfEmpty(db: DatabaseSync) {
           }
 
           const insertArticle = db.prepare(`
-            INSERT OR REPLACE INTO transfer_articles (id, lesson_id, title, body_text, questions_json, created_at)
+            INSERT OR IGNORE INTO transfer_articles (id, lesson_id, title, body_text, questions_json, created_at)
             VALUES (?, ?, ?, ?, ?, ?)
           `);
           for (const art of data.articles || []) {

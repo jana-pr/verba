@@ -19,6 +19,8 @@ import {
   BookA
 } from 'lucide-react';
 
+import { getLastActiveCourseId, markCourseAsOpened } from '@/lib/client-storage';
+
 export default function HomePage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [activeCourse, setActiveCourse] = useState<Course | null>(null);
@@ -34,12 +36,14 @@ export default function HomePage() {
       .then(async (data: Course[]) => {
         if (Array.isArray(data) && data.length > 0) {
           setCourses(data);
-          const first = data[0];
-          setActiveCourse(first);
+          const savedActiveId = getLastActiveCourseId();
+          const targetCourse = (savedActiveId && data.find((c) => c.id === savedActiveId)) || data[0];
+          setActiveCourse(targetCourse);
+          markCourseAsOpened(targetCourse.id, targetCourse);
 
           // Fetch full course data including lessons & outline
           try {
-            const courseRes = await fetch(`/api/courses/${first.id}`);
+            const courseRes = await fetch(`/api/courses/${targetCourse.id}`);
             const courseData = await courseRes.json();
             if (courseData.lessons) setLessons(courseData.lessons);
             if (courseData.outline) setOutline(courseData.outline);
@@ -47,9 +51,9 @@ export default function HomePage() {
             console.error('Error fetching course lessons:', e);
           }
 
-          if (first.status === 'ready' || first.completed_lessons_count > 0) {
+          if (targetCourse.status === 'ready' || targetCourse.completed_lessons_count > 0) {
             try {
-              const progRes = await fetch(`/api/courses/${first.id}/progress`);
+              const progRes = await fetch(`/api/courses/${targetCourse.id}/progress`);
               const prog = await progRes.json();
               setProgressData(prog);
             } catch (e) {

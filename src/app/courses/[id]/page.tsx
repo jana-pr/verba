@@ -18,6 +18,8 @@ import {
   Trash2
 } from 'lucide-react';
 
+import { markCourseAsOpened } from '@/lib/client-storage';
+
 export default function CourseDetailPage({
   params,
 }: {
@@ -42,6 +44,7 @@ export default function CourseDetailPage({
     try {
       const res = await fetch(`/api/courses/${id}`, { method: 'DELETE' });
       if (res.ok) {
+        window.dispatchEvent(new Event('courses-updated'));
         window.location.href = '/';
       } else {
         alert('Chyba při mazání kurzu.');
@@ -61,6 +64,11 @@ export default function CourseDetailPage({
           setCourse(data.course);
           setLessons(data.lessons || []);
           setOutline(data.outline || []);
+          markCourseAsOpened(id, {
+            ...data.course,
+            lessons: data.lessons || [],
+            outline: data.outline || [],
+          });
         }
         setLoading(false);
       })

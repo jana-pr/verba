@@ -25,7 +25,12 @@ import {
 } from 'lucide-react';
 import { MobileQrModal } from '../mobile/MobileQrModal';
 import { Course } from '@/lib/db/schema';
-import { syncAndRestoreMissingCourses, saveCourseToLocal } from '@/lib/client-storage';
+import { 
+  markCourseAsOpened, 
+  getLastActiveCourseId, 
+  performAutoSync, 
+  getClientVault 
+} from '@/lib/client-storage';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -46,24 +51,34 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   useEffect(() => {
     const fetchAndSyncCourses = async () => {
       try {
+        // 1. Auto-sync with server to restore any courses and progress across redeployments
+        await performAutoSync();
+
+        // 2. Fetch all courses from server
         const res = await fetch('/api/courses');
         const data: Course[] = await res.json();
         if (Array.isArray(data)) {
-          setCourses(data);
-          const found = activeCourseId
-            ? data.find((c) => c.id === activeCourseId)
-            : data[0];
-          if (found) setCurrentCourse(found);
+          // Merge with any courses stored in local client vault
+          const vault = getClientVault();
+          const serverMap = new Map(data.map((c) => [c.id, c]));
+          const combinedCourses: Course[] = [...data];
 
-          // Auto-cache to local storage
-          data.forEach((c) => saveCourseToLocal(c));
+          for (const vc of vault.courses || []) {
+            if (!serverMap.has(vc.id)) {
+              combinedCourses.push(vc);
+            }
+          }
 
-          // Auto-sync missing courses if client has them but server lost them (e.g. redeploy)
-          const restored = await syncAndRestoreMissingCourses(data);
-          if (restored > 0) {
-            const reRes = await fetch('/api/courses');
-            const reData: Course[] = await reRes.json();
-            if (Array.isArray(reData)) setCourses(reData);
+          setCourses(combinedCourses);
+
+          // 3. Resolve active course: explicit prop -> last opened course -> first course
+          const savedActiveId = getLastActiveCourseId();
+          const targetId = activeCourseId || savedActiveId;
+          const found = (targetId && combinedCourses.find((c) => c.id === targetId)) || combinedCourses[0];
+
+          if (found) {
+            setCurrentCourse(found);
+            markCourseAsOpened(found.id, found);
           }
         }
       } catch (err) {
