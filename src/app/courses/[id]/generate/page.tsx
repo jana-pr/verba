@@ -13,6 +13,7 @@ import {
   Sparkles,
   Layers
 } from 'lucide-react';
+import { saveCourseToLocal } from '@/lib/client-storage';
 
 export default function GenerateCoursePage({
   params,
@@ -84,6 +85,7 @@ export default function GenerateCoursePage({
         if (data.completed || data.current >= 50) {
           setIsCompleted(true);
           setIsGenerating(false);
+          saveCourseToLocal({ id, domain_area: course?.domain_area, completed_lessons_count: 50, status: 'ready' });
           break;
         }
 

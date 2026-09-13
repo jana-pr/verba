@@ -41,31 +41,55 @@ export const VerbaLogo: React.FC<VerbaLogoProps> = ({
         <svg
           width={iconDimensions.width}
           height={iconDimensions.height}
-          viewBox="0 0 36 36"
+          viewBox="0 0 44 44"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
           className="transition-transform duration-200"
           aria-label="VERBA Logo Icon"
         >
-          {/* Subtle container background with rounded corners */}
-          <rect width="36" height="36" rx="9" fill="#182033" fillOpacity="0.04" />
-          
-          {/* Left stroke: Active Recall (Verba Teal #14A89E) */}
+          <defs>
+            <linearGradient id="logoBg" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#0F172A" />
+              <stop offset="60%" stopColor="#1E1B4B" />
+              <stop offset="100%" stopColor="#020617" />
+            </linearGradient>
+            <linearGradient id="recallGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#38BDF8" />
+              <stop offset="100%" stopColor="#0D9488" />
+            </linearGradient>
+            <linearGradient id="compGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#A5B4FC" />
+              <stop offset="100%" stopColor="#4F46E5" />
+            </linearGradient>
+          </defs>
+
+          {/* Squircle Tile */}
+          <rect width="44" height="44" rx="10" fill="url(#logoBg)" />
+          <rect width="43" height="43" x="0.5" y="0.5" rx="9.5" stroke="#334155" strokeOpacity="0.6" fill="none" />
+
+          {/* Converging V Mark */}
+          {/* Active Recall wing (left) */}
           <path
-            d="M8 9L18 28"
-            stroke="#14A89E"
-            strokeWidth={iconDimensions.strokeWidth}
-            strokeLinecap="round"
+            d="M10 11 L15.5 11 L22 28 L19 28 L10 11 Z"
+            fill="url(#recallGrad)"
           />
-          {/* Right stroke: Comprehension (Verba Indigo #5146E5) */}
+          {/* Comprehension wing (right) */}
           <path
-            d="M28 9L18 28"
-            stroke="#5146E5"
-            strokeWidth={iconDimensions.strokeWidth}
-            strokeLinecap="round"
+            d="M34 11 L28.5 11 L22 28 L25 28 L34 11 Z"
+            fill="url(#compGrad)"
           />
-          {/* Convergence Mastery node at the apex */}
-          <circle cx="18" cy="28" r="2" fill="#5146E5" />
+          {/* Central Apex & Inner Chevron */}
+          <path
+            d="M18 21 L22 30 L26 21 L24 21 L22 25 L20 21 Z"
+            fill="#EEF2FF"
+            opacity="0.95"
+          />
+          {/* Golden Mastery Node */}
+          <polygon
+            points="22,30 24,33 22,36 20,33"
+            fill="#FDE68A"
+          />
+          <circle cx="22" cy="33" r="1" fill="#D97706" />
         </svg>
       </div>
 

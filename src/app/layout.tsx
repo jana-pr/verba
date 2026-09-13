@@ -5,6 +5,10 @@ export const metadata: Metadata = {
   title: 'VERBA — Words that work.',
   description: 'Understand it. Recall it. Use it. Osobní aplikace pro cílené studium odborného jazyka.',
   manifest: '/manifest.json',
+  icons: {
+    icon: '/favicon.png',
+    apple: '/apple-touch-icon.png',
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',

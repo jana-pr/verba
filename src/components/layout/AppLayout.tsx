@@ -5,9 +5,10 @@ import Link from 'next/link';
 import { Sidebar } from './Sidebar';
 import { BottomNav } from './BottomNav';
 import { VerbaLogo } from '../brand/VerbaLogo';
-import { ChevronDown, Plus, BookOpen, Trash2, QrCode } from 'lucide-react';
+import { ChevronDown, Plus, BookOpen, Trash2, QrCode, Download, Upload } from 'lucide-react';
 import { MobileQrModal } from '../mobile/MobileQrModal';
 import { Course } from '@/lib/db/schema';
+import { syncAndRestoreMissingCourses, saveCourseToLocal } from '@/lib/client-storage';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -22,21 +23,66 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   const [currentCourse, setCurrentCourse] = useState<Course | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetch('/api/courses')
-      .then((res) => res.json())
-      .then((data: Course[]) => {
+    const fetchAndSyncCourses = async () => {
+      try {
+        const res = await fetch('/api/courses');
+        const data: Course[] = await res.json();
         if (Array.isArray(data)) {
           setCourses(data);
           const found = activeCourseId
             ? data.find((c) => c.id === activeCourseId)
             : data[0];
           if (found) setCurrentCourse(found);
+
+          // Auto-cache to local storage
+          data.forEach((c) => saveCourseToLocal(c));
+
+          // Auto-sync missing courses if client has them but server lost them (e.g. redeploy)
+          const restored = await syncAndRestoreMissingCourses(data);
+          if (restored > 0) {
+            const reRes = await fetch('/api/courses');
+            const reData: Course[] = await reRes.json();
+            if (Array.isArray(reData)) setCourses(reData);
+          }
         }
-      })
-      .catch((err) => console.error('Error fetching courses:', err));
+      } catch (err) {
+        console.error('Error fetching courses:', err);
+      }
+    };
+
+    fetchAndSyncCourses();
   }, [activeCourseId]);
+
+  const handleImportBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text);
+
+      const res = await fetch('/api/courses/backup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(json),
+      });
+
+      if (res.ok) {
+        alert('Záloha byla úspěšně obnovena!');
+        window.location.reload();
+      } else {
+        const err = await res.json();
+        alert(`Chyba při obnově zálohy: ${err.error || 'Neznámá chyba'}`);
+      }
+    } catch (err: any) {
+      alert(`Neplatný soubor zálohy: ${err.message}`);
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const handleDeleteCourse = async (
     courseId: string,
@@ -144,14 +190,36 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                         </button>
                       </div>
                     ))}
-                    <div className="border-t border-slate-100 mt-1 pt-1">
+                    <div className="border-t border-slate-100 mt-1 pt-1 space-y-0.5">
                       <Link
                         href="/courses/new"
-                        className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-verba-indigo hover:bg-indigo-50 transition-colors"
+                        className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-verba-indigo hover:bg-indigo-50 transition-colors rounded-md"
                       >
                         <Plus className="w-3.5 h-3.5" />
                         <span>Nový kurz</span>
                       </Link>
+
+                      <div className="border-t border-slate-100 my-1"></div>
+
+                      <a
+                        href="/api/courses/backup"
+                        download
+                        className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors rounded-md"
+                        title="Stáhnout kompletní zálohu kurzů do JSON souboru"
+                      >
+                        <Download className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Zálohovat kurzy (JSON)</span>
+                      </a>
+
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors rounded-md"
+                        title="Obnovit kurzy ze záložního JSON souboru"
+                      >
+                        <Upload className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Obnovit ze zálohy</span>
+                      </button>
                     </div>
                   </div>
                 )}
@@ -194,6 +262,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       <MobileQrModal
         isOpen={isQrModalOpen}
         onClose={() => setIsQrModalOpen(false)}
+      />
+
+      {/* Hidden File Input for Backup Import */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleImportBackup}
+        accept=".json"
+        className="hidden"
       />
     </div>
   );
