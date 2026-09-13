@@ -12,14 +12,16 @@ import {
   BookA, 
   BarChart3, 
   PlusCircle, 
-  CheckSquare
+  CheckSquare,
+  QrCode
 } from 'lucide-react';
 
 interface SidebarProps {
   currentCourseId?: string;
+  onOpenQr?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentCourseId }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ currentCourseId, onOpenQr }) => {
   const pathname = usePathname();
 
   const navItems = [
@@ -69,8 +71,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentCourseId }) => {
         </nav>
       </div>
 
-      {/* Bottom CTA for new course */}
-      <div className="pt-4 border-t border-slate-100">
+      {/* Bottom CTA for new course and mobile QR */}
+      <div className="pt-4 border-t border-slate-100 space-y-2">
+        {onOpenQr && (
+          <button
+            type="button"
+            onClick={onOpenQr}
+            className="flex items-center justify-center gap-2 w-full py-2 px-3 rounded-xl border border-amber-200 bg-amber-50/70 hover:bg-amber-100/70 text-amber-900 font-medium text-xs transition-colors"
+          >
+            <QrCode className="w-3.5 h-3.5 text-amber-700" />
+            <span>Mobilní verze (QR)</span>
+          </button>
+        )}
         <Link
           href="/courses/new"
           className="flex items-center justify-center gap-2 w-full py-2.5 px-3 rounded-xl border border-indigo-200 text-verba-indigo hover:bg-indigo-50 font-medium text-xs transition-colors"

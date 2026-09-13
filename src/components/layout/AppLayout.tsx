@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { Sidebar } from './Sidebar';
 import { BottomNav } from './BottomNav';
 import { VerbaLogo } from '../brand/VerbaLogo';
-import { ChevronDown, Plus, BookOpen, Trash2 } from 'lucide-react';
+import { ChevronDown, Plus, BookOpen, Trash2, QrCode } from 'lucide-react';
+import { MobileQrModal } from '../mobile/MobileQrModal';
 import { Course } from '@/lib/db/schema';
 
 interface AppLayoutProps {
@@ -20,6 +21,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   const [courses, setCourses] = useState<Course[]>([]);
   const [currentCourse, setCurrentCourse] = useState<Course | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
 
   useEffect(() => {
     fetch('/api/courses')
@@ -66,7 +68,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   return (
     <div className="min-h-screen bg-verba-canvas flex flex-col md:flex-row text-verba-ink">
       {/* Desktop Sidebar */}
-      <Sidebar currentCourseId={currentCourse?.id} />
+      <Sidebar
+        currentCourseId={currentCourse?.id}
+        onOpenQr={() => setIsQrModalOpen(true)}
+      />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 pb-20 md:pb-8">
@@ -154,7 +159,19 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
+            {/* Mobile QR Button */}
+            <button
+              type="button"
+              onClick={() => setIsQrModalOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-amber-300/80 bg-amber-50/80 hover:bg-amber-100 text-amber-900 text-xs font-medium transition-colors shadow-2xs"
+              title="Otevřít na mobilním telefonu (QR kód)"
+            >
+              <QrCode className="w-3.5 h-3.5 text-amber-700" />
+              <span className="hidden sm:inline">Mobilní verze</span>
+              <span className="sm:hidden">Mobil</span>
+            </button>
+
             <span className="text-xs font-medium text-verba-slate hidden sm:inline">
               Jana Prošková
             </span>
@@ -172,6 +189,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
       {/* Mobile Bottom Navigation */}
       <BottomNav currentCourseId={currentCourse?.id} />
+
+      {/* Mobile QR Code Modal */}
+      <MobileQrModal
+        isOpen={isQrModalOpen}
+        onClose={() => setIsQrModalOpen(false)}
+      />
     </div>
   );
 };
