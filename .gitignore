@@ -19,6 +19,8 @@
 
 # Local database (Render persistent disk mounts to /data)
 # data/verba.db
+*.db-wal
+*.db-shm
 
 # Audio cache
 /public/audio_cache/*

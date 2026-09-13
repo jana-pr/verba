@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb, DEFAULT_USER_ID, ensureSeedCourses } from '@/lib/db';
+import { getDb, DEFAULT_USER_ID } from '@/lib/db';
 import { generateCurriculumOutline } from '@/lib/ai/course-generator';
 import crypto from 'node:crypto';
 
 export async function GET() {
   try {
     const db = getDb();
-    ensureSeedCourses(db);
     const stmt = db.prepare(`
       SELECT c.* FROM courses c
       LEFT JOIN deleted_courses d ON c.id = d.course_id
@@ -14,7 +13,9 @@ export async function GET() {
       ORDER BY c.created_at DESC
     `);
     const courses = stmt.all(DEFAULT_USER_ID);
-    return NextResponse.json(courses);
+    return NextResponse.json(courses, {
+      headers: { 'Cache-Control': 'no-store, max-age=0' },
+    });
   } catch (error) {
     console.error('Error fetching courses:', error);
     return NextResponse.json({ error: 'Failed to fetch courses' }, { status: 500 });

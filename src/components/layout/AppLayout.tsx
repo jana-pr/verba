@@ -81,21 +81,23 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
   // Synchronously update current course when route or prop changes
   useEffect(() => {
-    if (effectiveCourseId) {
+    if (effectiveCourseId && currentCourse?.id !== effectiveCourseId) {
       const found = courses.find((c) => c.id === effectiveCourseId);
       if (found) {
         setCurrentCourse(found);
         markCourseAsOpened(found.id, found);
       }
     }
-  }, [effectiveCourseId, courses]);
+  }, [effectiveCourseId]);
 
-  // Fetch server courses and run non-blocking auto-sync
+  // Fetch server courses once on mount and run delayed auto-sync
   useEffect(() => {
-    const fetchAndSyncCourses = async () => {
+    let isMounted = true;
+
+    const fetchCourses = async () => {
       try {
         const res = await fetch('/api/courses');
-        if (res.ok) {
+        if (res.ok && isMounted) {
           const serverData: Course[] = await res.json();
           if (Array.isArray(serverData)) {
             const merged = getAllMergedCourses(serverData);
@@ -108,34 +110,38 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             const found = (targetId && merged.find((c) => c.id === targetId)) || opened[0] || merged[0];
             if (found) {
               setCurrentCourse(found);
-              markCourseAsOpened(found.id, found);
             }
           }
         }
       } catch (err) {
         console.error('Error fetching courses:', err);
       }
-
-      // Background non-blocking sync
-      try {
-        await performAutoSync();
-      } catch (syncErr) {
-        console.warn('Background sync note:', syncErr);
-      }
     };
 
-    fetchAndSyncCourses();
+    fetchCourses();
+
+    // Background auto-sync throttled once after 3 seconds
+    const syncTimer = setTimeout(() => {
+      if (isMounted) {
+        performAutoSync().catch(() => {});
+      }
+    }, 3000);
 
     const handleCoursesUpdated = () => {
       const all = getAllMergedCourses();
       const opened = getOpenedCourses(all);
       setCourses(all);
       setOpenedCourses(opened);
-      fetchAndSyncCourses();
+      fetchCourses();
     };
+
     window.addEventListener('courses-updated', handleCoursesUpdated);
-    return () => window.removeEventListener('courses-updated', handleCoursesUpdated);
-  }, [effectiveCourseId]);
+    return () => {
+      isMounted = false;
+      clearTimeout(syncTimer);
+      window.removeEventListener('courses-updated', handleCoursesUpdated);
+    };
+  }, []);
 
   const handleImportBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

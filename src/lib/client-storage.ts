@@ -75,15 +75,29 @@ export const DEFAULT_PRESET_COURSES: any[] = [
   },
 ];
 
+// In-memory cache to eliminate synchronous JSON.parse / localStorage thrashing
+let cachedDeletedIds: string[] | null = null;
+let cachedOpenedIds: string[] | null = null;
+let cachedCustomCourses: any[] | null = null;
+
+export function invalidateStorageCache() {
+  cachedDeletedIds = null;
+  cachedOpenedIds = null;
+  cachedCustomCourses = null;
+}
+
 // ==========================================
 // 1. DELETED COURSES TRACKING
 // ==========================================
 
 export function getDeletedCourseIds(): string[] {
   if (typeof window === 'undefined') return [];
+  if (cachedDeletedIds !== null) return cachedDeletedIds;
   try {
     const raw = localStorage.getItem(DELETED_COURSES_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const parsed: string[] = raw ? JSON.parse(raw) : [];
+    cachedDeletedIds = parsed;
+    return parsed;
   } catch {
     return [];
   }
@@ -96,24 +110,19 @@ export function markCourseAsDeleted(courseId: string) {
     const deleted = getDeletedCourseIds();
     if (!deleted.includes(courseId)) {
       deleted.push(courseId);
+      cachedDeletedIds = deleted;
       localStorage.setItem(DELETED_COURSES_KEY, JSON.stringify(deleted));
     }
 
     // 2. Remove from opened IDs
-    const rawOpened = localStorage.getItem(OPENED_COURSES_KEY);
-    if (rawOpened) {
-      const opened: string[] = JSON.parse(rawOpened);
-      const filtered = opened.filter((id) => id !== courseId);
-      localStorage.setItem(OPENED_COURSES_KEY, JSON.stringify(filtered));
-    }
+    const opened = getOpenedCourseIds().filter((id) => id !== courseId);
+    cachedOpenedIds = opened;
+    localStorage.setItem(OPENED_COURSES_KEY, JSON.stringify(opened));
 
     // 3. Remove from custom imported courses
-    const rawCustom = localStorage.getItem(CUSTOM_COURSES_KEY);
-    if (rawCustom) {
-      const custom: any[] = JSON.parse(rawCustom);
-      const filtered = custom.filter((c) => c.id !== courseId);
-      localStorage.setItem(CUSTOM_COURSES_KEY, JSON.stringify(filtered));
-    }
+    const custom = getCustomImportedCourses().filter((c) => c.id !== courseId);
+    cachedCustomCourses = custom;
+    localStorage.setItem(CUSTOM_COURSES_KEY, JSON.stringify(custom));
 
     // 4. Remove from client vault
     const vault = getClientVault();
@@ -122,9 +131,8 @@ export function markCourseAsDeleted(courseId: string) {
 
     // 5. If active course was this course, reset active
     if (getLastActiveCourseId() === courseId) {
-      const remainingOpened = getOpenedCourseIds();
-      if (remainingOpened.length > 0) {
-        localStorage.setItem(ACTIVE_COURSE_KEY, remainingOpened[0]);
+      if (opened.length > 0) {
+        localStorage.setItem(ACTIVE_COURSE_KEY, opened[0]);
       } else {
         localStorage.removeItem(ACTIVE_COURSE_KEY);
       }
@@ -140,12 +148,15 @@ export function markCourseAsDeleted(courseId: string) {
 
 export function getCustomImportedCourses(): any[] {
   if (typeof window === 'undefined') return [];
+  if (cachedCustomCourses !== null) return cachedCustomCourses;
   try {
     const raw = localStorage.getItem(CUSTOM_COURSES_KEY);
     if (raw) {
       const parsed: any[] = JSON.parse(raw);
       const deletedIds = new Set(getDeletedCourseIds());
-      return parsed.filter((c) => c && c.id && !deletedIds.has(c.id));
+      const filtered = parsed.filter((c) => c && c.id && !deletedIds.has(c.id));
+      cachedCustomCourses = filtered;
+      return filtered;
     }
   } catch (e) {
     console.warn('Error reading custom imported courses:', e);
@@ -160,6 +171,7 @@ export function saveImportedCourseToStorage(courseData: any) {
     const deleted = getDeletedCourseIds();
     if (deleted.includes(courseData.id)) {
       const filtered = deleted.filter((id) => id !== courseData.id);
+      cachedDeletedIds = filtered;
       localStorage.setItem(DELETED_COURSES_KEY, JSON.stringify(filtered));
     }
 
@@ -171,6 +183,7 @@ export function saveImportedCourseToStorage(courseData: any) {
     } else {
       custom.unshift(courseData);
     }
+    cachedCustomCourses = custom;
     localStorage.setItem(CUSTOM_COURSES_KEY, JSON.stringify(custom));
 
     // 3. Save into client vault
@@ -283,6 +296,7 @@ export function getAllMergedCourses(serverCourses: any[] = []): any[] {
 
 export function getOpenedCourseIds(): string[] {
   if (typeof window === 'undefined') return DEFAULT_PRESET_COURSES.map((c) => c.id);
+  if (cachedOpenedIds !== null) return cachedOpenedIds;
   const deletedIds = new Set(getDeletedCourseIds());
 
   try {
@@ -290,7 +304,9 @@ export function getOpenedCourseIds(): string[] {
     if (raw !== null) {
       const list: string[] = JSON.parse(raw);
       if (Array.isArray(list)) {
-        return list.filter((id) => !deletedIds.has(id));
+        const filtered = list.filter((id) => !deletedIds.has(id));
+        cachedOpenedIds = filtered;
+        return filtered;
       }
     }
   } catch {
@@ -299,6 +315,7 @@ export function getOpenedCourseIds(): string[] {
 
   // Initial default: all non-deleted preset courses are opened initially
   const defaults = DEFAULT_PRESET_COURSES.map((c) => c.id).filter((id) => !deletedIds.has(id));
+  cachedOpenedIds = defaults;
   if (typeof window !== 'undefined') {
     localStorage.setItem(OPENED_COURSES_KEY, JSON.stringify(defaults));
   }
@@ -311,15 +328,23 @@ export function markCourseAsOpened(courseId: string, fullCourseData?: any) {
   if (deletedIds.has(courseId)) return;
 
   try {
-    // 1. Remember last active course
-    localStorage.setItem(ACTIVE_COURSE_KEY, courseId);
+    const currentActive = localStorage.getItem(ACTIVE_COURSE_KEY);
+    const opened = getOpenedCourseIds();
 
-    // 2. Track opened courses list ("Mé kurzy" - keep current course at the top)
-    const opened = getOpenedCourseIds().filter((id) => id !== courseId);
-    opened.unshift(courseId);
-    localStorage.setItem(OPENED_COURSES_KEY, JSON.stringify(opened));
+    const needsOpenedUpdate = opened[0] !== courseId || !opened.includes(courseId);
+    const needsActiveUpdate = currentActive !== courseId;
 
-    // 3. Cache course in vault if full data is provided
+    if (needsActiveUpdate) {
+      localStorage.setItem(ACTIVE_COURSE_KEY, courseId);
+    }
+
+    if (needsOpenedUpdate) {
+      const updatedOpened = opened.filter((id) => id !== courseId);
+      updatedOpened.unshift(courseId);
+      cachedOpenedIds = updatedOpened;
+      localStorage.setItem(OPENED_COURSES_KEY, JSON.stringify(updatedOpened));
+    }
+
     if (fullCourseData) {
       const vault = getClientVault();
       const existingIdx = vault.courses.findIndex((c: any) => c.id === courseId);
@@ -330,9 +355,6 @@ export function markCourseAsOpened(courseId: string, fullCourseData?: any) {
       }
       saveClientVault(vault);
     }
-
-    // 4. Dispatch update notification
-    window.dispatchEvent(new Event('courses-updated'));
   } catch (e) {
     console.warn('Error marking course as opened:', e);
   }
@@ -346,6 +368,7 @@ export function markCourseAsClosed(courseId: string): string[] {
 
   try {
     const opened = getOpenedCourseIds().filter((id) => id !== courseId);
+    cachedOpenedIds = opened;
     localStorage.setItem(OPENED_COURSES_KEY, JSON.stringify(opened));
 
     // If active course was closed, switch active to the next remaining course

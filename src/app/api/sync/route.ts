@@ -16,7 +16,6 @@ export async function POST(req: NextRequest) {
     const { clientCourses = [], clientStates = [], clientLogs = [], clientDeletedIds = [] } = body;
 
     const db = getDb();
-    ensureSeedCourses(db);
 
     // Record any client-deleted IDs into deleted_courses
     for (const did of clientDeletedIds) {

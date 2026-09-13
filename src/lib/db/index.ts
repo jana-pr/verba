@@ -14,7 +14,12 @@ let dbInstance: DatabaseSync | null = null;
 export function getDb(): DatabaseSync {
   if (!dbInstance) {
     dbInstance = new DatabaseSync(DB_FILE);
-    dbInstance.exec(`PRAGMA foreign_keys = ON;`);
+    dbInstance.exec(`
+      PRAGMA foreign_keys = ON;
+      PRAGMA journal_mode = WAL;
+      PRAGMA synchronous = NORMAL;
+      PRAGMA cache_size = -64000;
+    `);
     initTables(dbInstance);
     ensureSeedCourses(dbInstance);
   }
@@ -161,6 +166,11 @@ function initTables(db: DatabaseSync) {
       course_id TEXT PRIMARY KEY,
       deleted_at TEXT NOT NULL
     );
+
+    CREATE INDEX IF NOT EXISTS idx_courses_user ON courses(user_id);
+    CREATE INDEX IF NOT EXISTS idx_lessons_course ON lessons(course_id);
+    CREATE INDEX IF NOT EXISTS idx_learning_items_course ON learning_items(course_id);
+    CREATE INDEX IF NOT EXISTS idx_user_item_states_course ON user_item_states(course_id);
 
     -- Ensure default user exists
     INSERT OR IGNORE INTO users (id, email, full_name, created_at)
