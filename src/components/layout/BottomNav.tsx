@@ -22,19 +22,19 @@ export const BottomNav: React.FC<BottomNavProps> = ({ currentCourseId, onOpenMen
     { label: 'Domů', href: '/', icon: Home, matchExact: true },
     {
       label: 'Lekce',
-      href: currentCourseId ? `/courses/${currentCourseId}` : '/courses/new',
+      href: currentCourseId ? `/courses/view?id=${currentCourseId}` : '/courses/new',
       icon: Layers,
       matchExact: false,
     },
     {
       label: 'Procvičit',
-      href: currentCourseId ? `/courses/${currentCourseId}/practice` : '/courses/new',
+      href: currentCourseId ? `/courses/practice?id=${currentCourseId}` : '/courses/new',
       icon: Dumbbell,
       matchExact: false,
     },
     {
       label: 'Slovník',
-      href: currentCourseId ? `/courses/${currentCourseId}/dictionary` : '/courses/new',
+      href: currentCourseId ? `/courses/dictionary?id=${currentCourseId}` : '/courses/new',
       icon: BookA,
       matchExact: false,
     },
@@ -44,9 +44,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({ currentCourseId, onOpenMen
     <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200/80 px-2 py-1.5 z-40 flex items-center justify-around shadow-sm select-none safe-area-pb">
       {items.map((item) => {
         const Icon = item.icon;
+        const baseHref = item.href.split('?')[0];
         const isActive = item.matchExact
           ? pathname === item.href
-          : pathname.startsWith(item.href);
+          : (baseHref === '/' ? pathname === '/' : pathname.startsWith(baseHref));
 
         return (
           <Link

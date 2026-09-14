@@ -31,11 +31,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentCourseId, onOpenQr }) =
     { label: 'Mé kurzy', href: '/courses/my', icon: GraduationCap, matchExact: false },
     ...(currentCourseId
       ? [
-          { label: 'Lekce kurzu', href: `/courses/${currentCourseId}`, icon: Layers },
-          { label: 'Procvičování', href: `/courses/${currentCourseId}/practice`, icon: Dumbbell },
-          { label: 'Opakování (Review)', href: `/courses/${currentCourseId}/review`, icon: RotateCw },
-          { label: 'Centrální slovník', href: `/courses/${currentCourseId}/dictionary`, icon: BookA },
-          { label: 'Můj progress', href: `/courses/${currentCourseId}/progress`, icon: BarChart3 },
+          { label: 'Lekce kurzu', href: `/courses/view?id=${currentCourseId}`, icon: Layers },
+          { label: 'Procvičování', href: `/courses/practice?id=${currentCourseId}`, icon: Dumbbell },
+          { label: 'Opakování (Review)', href: `/courses/review?id=${currentCourseId}`, icon: RotateCw },
+          { label: 'Centrální slovník', href: `/courses/dictionary?id=${currentCourseId}`, icon: BookA },
+          { label: 'Můj progress', href: `/courses/progress?id=${currentCourseId}`, icon: BarChart3 },
         ]
       : []),
     { label: 'Katalog kurzů', href: '/courses/new?tab=presets', icon: BookOpen },
@@ -53,9 +53,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentCourseId, onOpenQr }) =
         <nav className="space-y-1.5">
           {navItems.map((item) => {
             const Icon = item.icon;
+            const baseHref = item.href.split('?')[0];
             const isActive = item.matchExact
               ? pathname === item.href
-              : pathname.startsWith(item.href);
+              : (baseHref === '/' ? pathname === '/' : pathname.startsWith(baseHref));
 
             return (
               <Link

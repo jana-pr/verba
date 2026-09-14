@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 
 import { getLastActiveCourseId, markCourseAsOpened, getAllMergedCourses, getOpenedCourses } from '@/lib/client-storage';
+import { getAllCourses, getCourseDetail, getCourseProgressStats } from '@/lib/data-repository';
 
 export default function HomePage() {
   const [courses, setCourses] = useState<Course[]>(() => getAllMergedCourses());
@@ -40,9 +41,7 @@ export default function HomePage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const res = await fetch('/api/courses');
-        const data: Course[] = res.ok ? await res.json() : [];
-        const merged = getAllMergedCourses(Array.isArray(data) ? data : []);
+        const merged = await getAllCourses();
         setCourses(merged);
 
         const savedActiveId = getLastActiveCourseId();
@@ -58,23 +57,17 @@ export default function HomePage() {
 
           // Fetch full course data including lessons & outline
           try {
-            const courseRes = await fetch(`/api/courses/${targetCourse.id}`);
-            if (courseRes.ok) {
-              const courseData = await courseRes.json();
-              if (courseData.lessons) setLessons(courseData.lessons);
-              if (courseData.outline) setOutline(courseData.outline);
-            }
+            const courseData = await getCourseDetail(targetCourse.id);
+            if (courseData.lessons) setLessons(courseData.lessons);
+            if (courseData.outline) setOutline(courseData.outline);
           } catch (e) {
             console.error('Error fetching course lessons:', e);
           }
 
           if (targetCourse.status === 'ready' || targetCourse.completed_lessons_count > 0) {
             try {
-              const progRes = await fetch(`/api/courses/${targetCourse.id}/progress`);
-              if (progRes.ok) {
-                const prog = await progRes.json();
-                setProgressData(prog);
-              }
+              const prog = await getCourseProgressStats(targetCourse.id);
+              setProgressData(prog);
             } catch (e) {
               console.error('Error fetching progress:', e);
             }
@@ -192,7 +185,7 @@ export default function HomePage() {
               {/* Quick Actions (Compact) */}
               <div className="flex items-center gap-2 shrink-0 pt-1 sm:pt-0">
                 <Link
-                  href={`/courses/${activeCourse.id}/lessons/1`}
+                  href={`/courses/lessons?id=${activeCourse.id}&lessonId=1`}
                   className="flex-1 sm:flex-initial py-2 px-3.5 rounded-xl bg-verba-indigo hover:bg-verba-indigo-dark text-white font-semibold text-xs shadow-xs transition-all flex items-center justify-center gap-1.5 active:scale-98"
                 >
                   <BookOpen className="w-3.5 h-3.5" />
@@ -200,7 +193,7 @@ export default function HomePage() {
                 </Link>
 
                 <Link
-                  href={`/courses/${activeCourse.id}/practice`}
+                  href={`/courses/practice?id=${activeCourse.id}`}
                   className="flex-1 sm:flex-initial py-2 px-3.5 rounded-xl border border-indigo-200 bg-indigo-50/60 hover:bg-indigo-100/60 text-verba-indigo font-semibold text-xs transition-colors flex items-center justify-center gap-1.5"
                 >
                   <Dumbbell className="w-3.5 h-3.5" />
@@ -248,7 +241,7 @@ export default function HomePage() {
                     onClick={() => {
                       setActiveCourse(c);
                       markCourseAsOpened(c.id, c);
-                      window.location.href = `/courses/${c.id}`;
+                      window.location.href = `/courses/view?id=${c.id}`;
                     }}
                     className={`p-2.5 rounded-xl border text-left transition-all ${
                       isCurrent 
@@ -313,7 +306,7 @@ export default function HomePage() {
               {displayedLessons.map((item) => (
                 <Link
                   key={item.number}
-                  href={`/courses/${activeCourse.id}/lessons/${item.number}`}
+                  href={`/courses/lessons?id=${activeCourse.id}&lessonId=${item.number}`}
                   className={`verba-card p-2.5 sm:p-3 flex items-center justify-between gap-2.5 verba-card-hover transition-all ${
                     item.isCheckpoint
                       ? 'border-l-4 border-l-verba-review bg-amber-50/20'
@@ -363,7 +356,7 @@ export default function HomePage() {
                 Přehled a bilance
               </span>
               <Link
-                href={`/courses/${activeCourse.id}/progress`}
+                href={`/courses/progress?id=${activeCourse.id}`}
                 className="text-[11px] font-semibold text-verba-indigo hover:underline flex items-center gap-0.5"
               >
                 <span>Plná analytika</span>
@@ -405,7 +398,7 @@ export default function HomePage() {
             {/* Compact action buttons */}
             <div className="grid grid-cols-2 gap-2 pt-1">
               <Link
-                href={`/courses/${activeCourse.id}/review`}
+                href={`/courses/review?id=${activeCourse.id}`}
                 className="py-2 px-3 rounded-lg border border-slate-200 hover:border-indigo-200 text-verba-ink hover:text-verba-indigo font-medium text-xs flex items-center justify-center gap-1.5 transition-colors text-center"
               >
                 <RotateCw className="w-3 h-3 text-verba-review" />
@@ -413,7 +406,7 @@ export default function HomePage() {
               </Link>
 
               <Link
-                href={`/courses/${activeCourse.id}/dictionary`}
+                href={`/courses/dictionary?id=${activeCourse.id}`}
                 className="py-2 px-3 rounded-lg border border-slate-200 hover:border-indigo-200 text-verba-ink hover:text-verba-indigo font-medium text-xs flex items-center justify-center gap-1.5 transition-colors text-center"
               >
                 <BookA className="w-3 h-3 text-verba-teal" />

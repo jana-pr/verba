@@ -8,9 +8,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "prod": "next start -H 0.0.0.0 -p 3000",
-    "deploy": "node scripts/deploy.cjs",
+    "start": "npx serve out -l 3000",
+    "prod": "npx serve out -l 3000",
+    "preview": "npx serve out -l 3000",
+    "deploy": "node scripts/deploy_firebase.cjs",
     "shortcut": "node scripts/create_desktop_shortcut.cjs"
   },
   "dependencies": {

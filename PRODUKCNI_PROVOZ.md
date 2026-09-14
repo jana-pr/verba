@@ -1,66 +1,56 @@
-# VERBA — PRODUKČNÍ PROVOZ & OCHRANA DAT (v1.0.0)
+# VERBA — PRODUKČNÍ PROVOZ & OCHRANA DAT (Firebase Hosting + Google Cloud Firestore)
 
-Tento dokument slouží jako provozní příručka pro aplikaci **VERBA** po sjednocení architektury s aplikacemi **KLAP** a **GANTT**.
+Tento dokument slouží jako kompletní provozní příručka pro aplikaci **VERBA** po přesunu na **Firebase Hosting** a napojení na **Google Cloud Firestore**.
 
 ---
 
 ## 1. PROČ RENDER MAZAL DATA A JAK JE TO NYNÍ VYŘEŠENO
 
-Na bezplatném cloudu Render docházelo při každém novém nasazení (nebo uspání serveru po nečinnosti) ke kompletnímu znovuvytvoření kontejneru. Protože Render na free plánu nepodporuje trvalé disky, soubor databáze se smazal a vrátil do výchozího stavu z repozitáře.
+### Původní problém na Renderu:
+Na bezplatném cloudu Render docházelo při každém novém nasazení (nebo uspání serveru po nečinnosti) ke kompletnímu znovuvytvoření kontejneru. Protože bezplatný Render nepodporuje trvalé disky, jakýkoliv lokální soubor databáze se smazal a vrátil do výchozího stavu z repozitáře.
 
-### Nové řešení (stejně jako KLAP a GANTT):
-1. **Google Cloud Firestore (jako KLAP):**
-   - Všechny kurzy, vygenerované lekce, postupy a streaky se automaticky a trvale ukládají do Google Cloud Firestore (projekt `futro-app`, kolekce `verba`).
-   - Ani restart kontejneru, ani redeploy kódů data nikdy nesmaže.
+### Nové řešení (shodné s KLAP):
+1. **Google Cloud Firestore (`futro-app`):**
+   - Všechny kurzy (předpřipravené i naimportované), vygenerované lekce, obousměrná historie pokusů (Active Recall CZ→EN i Porozumění EN→CZ) a streaky se automaticky a trvale ukládají do Google Cloud Firestore.
+   - Ani restart kontejneru, ani redeploy kódů data **nikdy nesmaže**.
 
-2. **Lokální produkční server s SQLite (jako GANTT):**
-   - Aplikace běží přímo na tomto počítači. Databáze `data/verba.db` je uložena lokálně na disku v OneDrive složce a přežije jakoukoliv aktualizaci.
-   - Běží jako samostatné PWA okno v Google Chrome bez adresního řádku.
+2. **Serverless Firebase Hosting (`https://verba-learning.web.app`):**
+   - Aplikace je publikována na vysoce dostupné globální CDN síti Google Firebase.
+   - Není závislá na žádném běžícím serveru, nevypíná se po nečinnosti a načítá se okamžitě.
 
-3. **Klientský Master Vault (localStorage):**
-   - Vše je navíc zálohováno přímo v prohlížeči, takže i při výpadku sítě jsou data ihned dostupná.
+3. **Klientský Master Vault (localStorage) + PWA Offline Podpora:**
+   - Veškerý obsah a stav studia je zrcadlen v prohlížeči. Aplikace funguje i v offline režimu a při opětovném připojení se automaticky synchronizuje s cloudem.
 
 ---
 
 ## 2. PŘÍSTUPOVÉ ADRESY
 
-Server běží na portu `3000` a naslouchá na všech rozhraních (`0.0.0.0`):
+* **Produkční online aplikace (PC, tablet, mobil kdekoliv na internetu):**  
+  👉 **[https://verba-learning.web.app](https://verba-learning.web.app)**
 
-* **Z tohoto počítače:**  
+* **Lokální vývojový režim:**  
   👉 **[http://localhost:3000](http://localhost:3000)**
 
-* **Z mobilního telefonu nebo tabletu na stejné Wi-Fi síti:**  
-  📱 Stačí v aplikaci kliknout na ikonu **Mobilní přístup (QR kód)** v horní liště a naskenovat kód foťákem telefonu.
-  Adresa v síti: `http://<Vase_IP_v_siti>:3000`
+---
+
+## 3. PUBLIKACE A AKTUALIZACE NA 1 KLIKNUTÍ
+
+Kdykoliv provedete změny v kódu, stačí:
+
+1. Dvakrát poklepat na **`Publikovat_online.bat`** (nebo `deploy.bat`) v hlavní složce aplikace.
+2. Skript automaticky:
+   - Sestaví optimalizovaný produkční statický export (`npm run build` do `out/`).
+   - Ověří integritu všech 50 lekcí a seed dat (`public/data/seed-courses.json`).
+   - Nahraje novou verzi na Firebase Hosting (`verba-learning.web.app`) i bezpečnostní pravidla Firestore.
+3. Během několika sekund je nová verze živě dostupná po celém světě.
 
 ---
 
-## 3. SPOUŠTĚNÍ APLIKACE NA 1 KLIKNUTÍ
+## 4. ARCHITEKTURA A KLÍČOVÉ SOUBORY
 
-Máte k dispozici 3 pohodlné možnosti:
-
-1. **Přímo z Plochy Windows:**
-   - Dvakrát poklepejte na ikonu **VERBA** na Ploše.
-   - Aplikace se otevře v čistém samostatném okně (PWA).
-
-2. **Dávkovým spouštěčem:**
-   - Poklepejte na soubor `Spustit_VERBA.bat` nebo `start-production.bat` v kořenovém adresáři.
-
-3. **Z příkazové řádky:**
-   ```bash
-   npm.cmd run start -- -H 0.0.0.0 -p 3000
-   ```
-
----
-
-## 4. NASAZENÍ OPRAV A AKTUALIZACÍ (HOTFIXŮ)
-
-Když v aplikaci provedete úpravy kódu nebo přidáte novou funkci, stačí:
-
-* Poklepat na **`Publikovat_online.bat`** nebo **`deploy.bat`**.
-
-Skript automaticky:
-1. Zkontroluje a sestaví optimalizovaný produkční build.
-2. Zkontroluje integritu lokální databáze `verba.db`.
-3. Ověří synchronizaci s Google Cloud Firestore.
-4. Obnoví zástupce na Ploše.
+- **`.firebaserc`**: Konfigurace projektu (`futro-app`) a cílového webu (`verba-learning`).
+- **`firebase.json`**: Pravidla hostingu, cache hlavičky pro PWA a rewrite pravidla.
+- **`firestore.rules`**: Pravidla zabezpečení pro trvalou databázi v Google Cloud Firestore.
+- **`src/lib/firebase.ts`**: Inicializace Firebase SDK a synchronizace kurzů a stavu studia.
+- **`src/lib/data-repository.ts`**: Centrální klientský repozitář dat pro obousměrný nácvik a správu kurzů.
+- **`public/data/seed-courses.json`**: Výchozí balíček 4 profesních kurzů (200 kompletních lekcí, článků a cvičení).

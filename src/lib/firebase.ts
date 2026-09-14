@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore, doc, setDoc, getDoc, onSnapshot } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, getDocs, deleteDoc } from 'firebase/firestore';
 
 export const firebaseConfig = {
   apiKey: 'AIzaSyC96nG9NYlSFU1GXzQUVKyIbbGixZ38wVs',
@@ -15,6 +15,7 @@ export const firestoreDb = getFirestore(app);
 
 export const FIRESTORE_COLLECTION = 'verba';
 export const FIRESTORE_DOC_ID = 'user_data';
+export const FIRESTORE_COURSES_COLLECTION = 'verba_courses';
 
 export interface CloudUserData {
   version?: string;
@@ -91,3 +92,56 @@ export function subscribeToCloudData(
     return () => {};
   }
 }
+
+/**
+ * Uloží kompletní kurz do samostatného dokumentu v kolekci 'verba_courses'
+ */
+export async function saveCustomCourseToCloud(course: any): Promise<boolean> {
+  if (!course?.id) return false;
+  try {
+    const docRef = doc(firestoreDb, FIRESTORE_COURSES_COLLECTION, course.id);
+    const sanitized = JSON.parse(JSON.stringify({
+      ...course,
+      lastUpdated: new Date().toISOString(),
+    }));
+    await setDoc(docRef, sanitized, { merge: true });
+    return true;
+  } catch (err) {
+    console.warn(`[Firebase Firestore] Failed to save course ${course.id}:`, err);
+    return false;
+  }
+}
+
+/**
+ * Smaže vlastní kurz z kolekce 'verba_courses'
+ */
+export async function deleteCustomCourseFromCloud(courseId: string): Promise<boolean> {
+  if (!courseId) return false;
+  try {
+    const docRef = doc(firestoreDb, FIRESTORE_COURSES_COLLECTION, courseId);
+    await deleteDoc(docRef);
+    return true;
+  } catch (err) {
+    console.warn(`[Firebase Firestore] Failed to delete course ${courseId}:`, err);
+    return false;
+  }
+}
+
+/**
+ * Načte všechny vlastní kurzy z kolekce 'verba_courses'
+ */
+export async function loadAllCustomCoursesFromCloud(): Promise<any[]> {
+  try {
+    const colRef = collection(firestoreDb, FIRESTORE_COURSES_COLLECTION);
+    const snap = await getDocs(colRef);
+    const courses: any[] = [];
+    snap.forEach((d) => {
+      courses.push(d.data());
+    });
+    return courses;
+  } catch (err) {
+    console.warn('[Firebase Firestore] Failed to load custom courses:', err);
+    return [];
+  }
+}
+

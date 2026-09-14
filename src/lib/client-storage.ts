@@ -523,49 +523,51 @@ export async function performAutoSync(): Promise<{ restoredCourses: number; merg
     let restoredCount = 0;
     let mergedCount = 0;
 
-    try {
-      const res = await fetch('/api/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clientCourses: Array.from(courseMap.values()),
-          clientStates: vault.states || [],
-          clientLogs: vault.attemptLogs || [],
-          clientDeletedIds: Array.from(currentDeleted),
-        }),
-      });
+    if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+      try {
+        const res = await fetch('/api/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            clientCourses: Array.from(courseMap.values()),
+            clientStates: vault.states || [],
+            clientLogs: vault.attemptLogs || [],
+            clientDeletedIds: Array.from(currentDeleted),
+          }),
+        });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          if (Array.isArray(data.deletedCourseIds)) {
-            const localDel = new Set(getDeletedCourseIds());
-            data.deletedCourseIds.forEach((id: string) => localDel.add(id));
-            localStorage.setItem(DELETED_COURSES_KEY, JSON.stringify(Array.from(localDel)));
-          }
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            if (Array.isArray(data.deletedCourseIds)) {
+              const localDel = new Set(getDeletedCourseIds());
+              data.deletedCourseIds.forEach((id: string) => localDel.add(id));
+              localStorage.setItem(DELETED_COURSES_KEY, JSON.stringify(Array.from(localDel)));
+            }
 
-          if (Array.isArray(data.courses) && data.courses.length > 0) {
-            const currentV = getClientVault();
-            const curDel = new Set(getDeletedCourseIds());
-            const mergedCourses = data.courses
-              .filter((sc: any) => !curDel.has(sc.id))
-              .map((sc: any) => {
-                const localMatch = currentV.courses.find((lc: any) => lc.id === sc.id);
-                return localMatch ? { ...sc, ...localMatch } : sc;
+            if (Array.isArray(data.courses) && data.courses.length > 0) {
+              const currentV = getClientVault();
+              const curDel = new Set(getDeletedCourseIds());
+              const mergedCourses = data.courses
+                .filter((sc: any) => !curDel.has(sc.id))
+                .map((sc: any) => {
+                  const localMatch = currentV.courses.find((lc: any) => lc.id === sc.id);
+                  return localMatch ? { ...sc, ...localMatch } : sc;
+                });
+
+              saveClientVault({
+                courses: mergedCourses,
+                states: data.states || currentV.states,
               });
+            }
 
-            saveClientVault({
-              courses: mergedCourses,
-              states: data.states || currentV.states,
-            });
+            restoredCount = data.restoredCourses || 0;
+            mergedCount = data.mergedStates || 0;
           }
-
-          restoredCount = data.restoredCourses || 0;
-          mergedCount = data.mergedStates || 0;
         }
+      } catch (serverErr) {
+        // Operating in cloud/static mode
       }
-    } catch (serverErr) {
-      console.warn('Server sync unavailable (operating offline/cloud mode):', serverErr);
     }
 
     // 3. CLOUD PUSH: Ensure Google Cloud Firestore has the latest unified snapshot

@@ -23,6 +23,7 @@ import {
   CheckCircle2, 
   GraduationCap
 } from 'lucide-react';
+import { getAllCourses, deleteCoursePermanently } from '@/lib/data-repository';
 
 export default function MyCoursesPage() {
   const router = useRouter();
@@ -33,9 +34,7 @@ export default function MyCoursesPage() {
 
   const refreshCourses = async () => {
     try {
-      const res = await fetch('/api/courses');
-      const serverData = res.ok ? await res.json() : [];
-      const merged = getAllMergedCourses(Array.isArray(serverData) ? serverData : []);
+      const merged = await getAllCourses();
       const opened = getOpenedCourses(merged);
       setCourses(merged);
       setOpenedCourses(opened);
@@ -72,13 +71,12 @@ export default function MyCoursesPage() {
     if (!confirm(`Opravdu chcete trvale smazat kurz „${courseName}“? Všechna data kurzu budou nenávratně odstraněna.`)) {
       return;
     }
-    markCourseAsDeleted(courseId);
     const remainingAll = courses.filter((c) => c.id !== courseId);
     const remainingOpened = openedCourses.filter((c) => c.id !== courseId);
     setCourses(remainingAll);
     setOpenedCourses(remainingOpened);
     try {
-      await fetch(`/api/courses/${courseId}`, { method: 'DELETE' });
+      await deleteCoursePermanently(courseId);
     } catch {}
     window.dispatchEvent(new Event('courses-updated'));
   };
@@ -86,7 +84,7 @@ export default function MyCoursesPage() {
   const handleSelectActive = (course: any) => {
     markCourseAsOpened(course.id, course);
     setActiveCourseId(course.id);
-    router.push(`/courses/${course.id}`);
+    router.push(`/courses/view?id=${course.id}`);
   };
 
   return (
@@ -237,7 +235,7 @@ export default function MyCoursesPage() {
                       </button>
 
                       <Link
-                        href={`/courses/${c.id}/practice`}
+                        href={`/courses/practice?id=${c.id}`}
                         className="inline-flex items-center justify-center gap-1 py-2 px-3 rounded-xl border border-indigo-200 bg-indigo-50/60 hover:bg-indigo-100/60 text-verba-indigo font-semibold text-xs transition-colors"
                         title="Spustit procvičování ve Focus Mode"
                       >
@@ -246,7 +244,7 @@ export default function MyCoursesPage() {
                       </Link>
 
                       <Link
-                        href={`/courses/${c.id}/dictionary`}
+                        href={`/courses/dictionary?id=${c.id}`}
                         className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-verba-slate hover:text-verba-ink transition-colors"
                         title="Zobrazit centrální slovník kurzu"
                       >

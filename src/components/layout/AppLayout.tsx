@@ -36,10 +36,12 @@ import {
   getLastActiveCourseId, 
   performAutoSync, 
   getClientVault,
+  saveClientVault,
   getAllMergedCourses,
   getOpenedCourses,
   DEFAULT_PRESET_COURSES
 } from '@/lib/client-storage';
+import { getAllCourses, deleteCoursePermanently } from '@/lib/data-repository';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -51,12 +53,17 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   activeCourseId,
 }) => {
   const pathname = usePathname();
-  const courseIdFromPath = pathname?.startsWith('/courses/')
-    ? pathname.split('/')[2]
-    : null;
-  const effectiveCourseId = (courseIdFromPath && courseIdFromPath !== 'new')
-    ? courseIdFromPath
-    : activeCourseId;
+  const [urlCourseId, setUrlCourseId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const qId = params.get('id');
+      if (qId) setUrlCourseId(qId);
+    }
+  }, [pathname]);
+
+  const effectiveCourseId = activeCourseId || urlCourseId || null;
 
   // All available courses (presets + imported)
   const [courses, setCourses] = useState<Course[]>(() => {
@@ -98,21 +105,17 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
     const fetchCourses = async () => {
       try {
-        const res = await fetch('/api/courses');
-        if (res.ok && isMounted) {
-          const serverData: Course[] = await res.json();
-          if (Array.isArray(serverData)) {
-            const merged = getAllMergedCourses(serverData);
-            const opened = getOpenedCourses(merged);
-            setCourses(merged);
-            setOpenedCourses(opened);
+        const merged = await getAllCourses();
+        if (isMounted) {
+          const opened = getOpenedCourses(merged);
+          setCourses(merged);
+          setOpenedCourses(opened);
 
-            const savedActiveId = getLastActiveCourseId();
-            const targetId = effectiveCourseId || savedActiveId;
-            const found = (targetId && merged.find((c) => c.id === targetId)) || opened[0] || merged[0];
-            if (found) {
-              setCurrentCourse(found);
-            }
+          const savedActiveId = getLastActiveCourseId();
+          const targetId = effectiveCourseId || savedActiveId;
+          const found = (targetId && merged.find((c) => c.id === targetId)) || opened[0] || merged[0];
+          if (found) {
+            setCurrentCourse(found);
           }
         }
       } catch (err) {
@@ -153,25 +156,34 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       const text = await file.text();
       const json = JSON.parse(text);
 
-      const res = await fetch('/api/courses/backup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(json),
-      });
-
-      if (res.ok) {
-        alert('Záloha byla úspěšně obnovena!');
-        window.dispatchEvent(new Event('courses-updated'));
-        window.location.reload();
-      } else {
-        const err = await res.json();
-        alert(`Chyba při obnově zálohy: ${err.error || 'Neznámá chyba'}`);
+      const vault = getClientVault();
+      if (Array.isArray(json.courses)) {
+        vault.courses = json.courses;
       }
+      if (Array.isArray(json.states)) {
+        vault.states = json.states;
+      }
+      saveClientVault(vault);
+
+      alert('Záloha byla úspěšně obnovena!');
+      window.dispatchEvent(new Event('courses-updated'));
+      window.location.reload();
     } catch (err: any) {
       alert(`Neplatný soubor zálohy: ${err.message}`);
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
+  };
+
+  const handleExportBackup = () => {
+    const vault = getClientVault();
+    const blob = new Blob([JSON.stringify(vault, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `verba-zaloha-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   // Close course from "Mé kurzy" (retains it in "Předpřipravené kurzy" / DB)
@@ -189,7 +201,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         const next = remaining[0];
         setCurrentCourse(next);
         markCourseAsOpened(next.id, next);
-        window.location.href = `/courses/${next.id}`;
+        window.location.href = `/courses/view?id=${next.id}`;
       } else {
         window.location.href = '/courses/new?tab=presets';
       }
@@ -218,8 +230,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       setCourses(remainingAll);
       setOpenedCourses(remainingOpened);
 
-      // 3. Call server DELETE API
-      await fetch(`/api/courses/${courseId}`, { method: 'DELETE' });
+      // 3. Call permanent cloud deletion
+      await deleteCoursePermanently(courseId);
 
       // 4. Dispatch event to notify all components
       window.dispatchEvent(new Event('courses-updated'));
@@ -230,7 +242,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           const nextCourse = remainingOpened[0];
           setCurrentCourse(nextCourse);
           markCourseAsOpened(nextCourse.id, nextCourse);
-          window.location.href = `/courses/${nextCourse.id}`;
+          window.location.href = `/courses/view?id=${nextCourse.id}`;
         } else if (remainingAll.length > 0) {
           window.location.href = '/courses/new?tab=presets';
         } else {
@@ -353,7 +365,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                               }`}
                             >
                               <Link
-                                href={`/courses/${c.id}`}
+                                href={`/courses/view?id=${c.id}`}
                                 onClick={() => {
                                   setCurrentCourse(c);
                                   markCourseAsOpened(c.id, c);
@@ -427,15 +439,18 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
                       <div className="border-t border-slate-100 my-1"></div>
 
-                        <a
-                          href="/api/courses/backup"
-                          download
-                          className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors rounded-md"
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsDropdownOpen(false);
+                            handleExportBackup();
+                          }}
+                          className="flex items-center gap-2 w-full px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors rounded-md text-left"
                           title="Stáhnout kompletní zálohu kurzů do JSON souboru"
                         >
                           <Download className="w-3.5 h-3.5 text-slate-500" />
                           <span>Zálohovat kurzy (JSON)</span>
-                        </a>
+                        </button>
 
                         <button
                           type="button"
@@ -554,7 +569,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                           }`}
                         >
                           <Link
-                            href={`/courses/${c.id}`}
+                            href={`/courses/view?id=${c.id}`}
                             onClick={() => {
                               setCurrentCourse(c);
                               markCourseAsOpened(c.id, c);
@@ -630,7 +645,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 {currentCourse && (
                   <>
                     <Link
-                      href={`/courses/${currentCourse.id}`}
+                      href={`/courses/view?id=${currentCourse.id}`}
                       onClick={() => setIsMobileDrawerOpen(false)}
                       className="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium text-verba-ink hover:bg-slate-50"
                     >
@@ -639,7 +654,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     </Link>
 
                     <Link
-                      href={`/courses/${currentCourse.id}/practice`}
+                      href={`/courses/practice?id=${currentCourse.id}`}
                       onClick={() => setIsMobileDrawerOpen(false)}
                       className="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium text-verba-indigo font-semibold bg-indigo-50/60"
                     >
@@ -648,7 +663,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     </Link>
 
                     <Link
-                      href={`/courses/${currentCourse.id}/review`}
+                      href={`/courses/review?id=${currentCourse.id}`}
                       onClick={() => setIsMobileDrawerOpen(false)}
                       className="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium text-verba-ink hover:bg-slate-50"
                     >
@@ -657,7 +672,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     </Link>
 
                     <Link
-                      href={`/courses/${currentCourse.id}/dictionary`}
+                      href={`/courses/dictionary?id=${currentCourse.id}`}
                       onClick={() => setIsMobileDrawerOpen(false)}
                       className="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium text-verba-ink hover:bg-slate-50"
                     >
@@ -666,7 +681,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     </Link>
 
                     <Link
-                      href={`/courses/${currentCourse.id}/progress`}
+                      href={`/courses/progress?id=${currentCourse.id}`}
                       onClick={() => setIsMobileDrawerOpen(false)}
                       className="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium text-verba-ink hover:bg-slate-50"
                     >
@@ -702,14 +717,17 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               </button>
 
               <div className="flex gap-2 pt-1">
-                <a
-                  href="/api/courses/backup"
-                  download
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileDrawerOpen(false);
+                    handleExportBackup();
+                  }}
                   className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg border border-slate-200 text-slate-600 text-[11px] font-medium hover:bg-slate-50 text-center"
                 >
                   <Download className="w-3 h-3 text-slate-500" />
                   <span>Záloha</span>
-                </a>
+                </button>
                 <button
                   type="button"
                   onClick={() => {

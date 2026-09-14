@@ -27,7 +27,7 @@ Set oWS = WScript.CreateObject("WScript.Shell")
 sLinkFile = "${shortcutPath.replace(/\\/g, '\\\\')}"
 Set oLink = oWS.CreateShortcut(sLinkFile)
 oLink.TargetPath = "${chromeExe.replace(/\\/g, '\\\\')}"
-oLink.Arguments = "--app=http://localhost:3000"
+oLink.Arguments = "--app=https://verba-learning.web.app"
 oLink.Description = "VERBA - Odborná jazyková platforma"
 oLink.WorkingDirectory = "${verbaDir.replace(/\\/g, '\\\\')}"
 ${fs.existsSync(iconPath) ? `oLink.IconLocation = "${iconPath.replace(/\\/g, '\\\\')},0"` : ''}

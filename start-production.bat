@@ -35,5 +35,5 @@ echo Server běží. Pro zastavení zavřete toto okno nebo stiskněte Ctrl+C.
 echo ================================================================
 echo.
 
-call npm.cmd run start -- -H 0.0.0.0 -p 3000
+call npm.cmd run prod
 pause

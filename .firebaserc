@@ -6,7 +6,7 @@
     "futro-app": {
       "hosting": {
         "verba": [
-          "verba-app"
+          "verba-learning"
         ]
       }
     }

@@ -32,3 +32,5 @@
 *.log
 .vscode/
 .idea/
+.firebase/
+legacy_backup/

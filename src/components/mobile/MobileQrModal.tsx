@@ -1,7 +1,8 @@
-﻿'use client';
+'use client';
 
 import React, { useEffect, useState } from 'react';
 import { QrCode, X, Copy, Check, Smartphone, ArrowUpRight } from 'lucide-react';
+import QRCode from 'qrcode';
 
 interface MobileQrModalProps {
   isOpen: boolean;
@@ -9,15 +10,24 @@ interface MobileQrModalProps {
 }
 
 export const MobileQrModal: React.FC<MobileQrModalProps> = ({ isOpen, onClose }) => {
-  const [currentUrl, setCurrentUrl] = useState('');
+  const [currentUrl, setCurrentUrl] = useState('https://verba-learning.web.app');
   const [copied, setCopied] = useState(false);
-  const [qrSrc, setQrSrc] = useState('/qr-local.svg');
+  const [qrSrc, setQrSrc] = useState('');
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const url = window.location.origin;
-      setCurrentUrl(url);
-      setQrSrc(`/api/qr?url=${encodeURIComponent(url)}`);
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      const targetUrl = isLocal ? 'https://verba-learning.web.app' : window.location.origin;
+      setCurrentUrl(targetUrl);
+      QRCode.toDataURL(targetUrl, {
+        width: 260,
+        margin: 1,
+        color: { dark: '#0f172a', light: '#ffffff' },
+      }).then((dataUrl) => {
+        setQrSrc(dataUrl);
+      }).catch((err) => {
+        console.warn('QR code gen error:', err);
+      });
     }
   }, [isOpen]);
 

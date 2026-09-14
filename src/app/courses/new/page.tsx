@@ -7,12 +7,14 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { generateGptCoursePrompt } from '@/lib/gpt-course-prompt';
 import { 
   getAllMergedCourses, 
+  getOpenedCourseIds,
   markCourseAsOpened, 
   markCourseAsClosed,
   markCourseAsDeleted, 
   saveImportedCourseToStorage,
-  getOpenedCourseIds 
+  DEFAULT_PRESET_COURSES
 } from '@/lib/client-storage';
+import { getAllCourses, importGptCourse, deleteCoursePermanently } from '@/lib/data-repository';
 import { 
   Sparkles, 
   Copy, 
@@ -46,9 +48,7 @@ export default function NewCoursePage() {
 
   const fetchPreparedCourses = async () => {
     try {
-      const res = await fetch('/api/courses');
-      const data = res.ok ? await res.json() : [];
-      const merged = getAllMergedCourses(Array.isArray(data) ? data : []);
+      const merged = await getAllCourses();
       setPreparedCourses(merged);
     } catch (e) {
       console.error('Error fetching prepared courses:', e);
@@ -141,52 +141,14 @@ export default function NewCoursePage() {
     setImportSuccess(null);
 
     try {
-      const res = await fetch('/api/courses/import-gpt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jsonText: jsonInput }),
-      });
+      const data = await importGptCourse(jsonInput);
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Chyba při importu kurzu.');
-      }
-
-      // Extract raw lessons from jsonInput if possible
-      let parsedLessons = [];
-      try {
-        const parsed = JSON.parse(jsonInput);
-        parsedLessons = parsed.lessons || parsed.course?.lessons || [];
-      } catch {}
-
-      // Permanently save to client storage vault so it NEVER disappears!
-      const fullCourse = data.course || {
-        id: data.courseId,
-        domain_area: data.domainArea || domainArea,
-        target_language: targetLanguage,
-        native_language: 'cs',
-        cefr_level: cefrLevel,
-        status: 'ready',
-        total_lessons: data.lessonCount || parsedLessons.length,
-        completed_lessons_count: data.lessonCount || parsedLessons.length,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-
-      saveImportedCourseToStorage({
-        ...fullCourse,
-        lessons: data.lessons || parsedLessons,
-        rawJson: jsonInput,
-      });
-
-      markCourseAsOpened(data.courseId, fullCourse);
-      setImportSuccess(data.message || 'Kurz byl úspěšně vytvořen a trvale uložen!');
+      setImportSuccess(data.message || 'Kurz byl úspěšně vytvořen a trvale uložen do Google Cloud Firestore!');
       window.dispatchEvent(new Event('courses-updated'));
       fetchPreparedCourses();
 
       setTimeout(() => {
-        router.push(`/courses/${data.courseId}`);
+        router.push(`/courses/view?id=${data.courseId}`);
       }, 800);
     } catch (err: any) {
       setImportError(err.message || 'Nepodařilo se naimportovat kurz.');
@@ -202,20 +164,8 @@ export default function NewCoursePage() {
       return;
     }
 
-    // 1. Mark as deleted in client storage immediately
-    markCourseAsDeleted(courseId);
     setPreparedCourses((prev) => prev.filter((c) => c.id !== courseId));
-    window.dispatchEvent(new Event('courses-updated'));
-
-    // 2. Delete on server
-    try {
-      const res = await fetch(`/api/courses/${courseId}`, { method: 'DELETE' });
-      if (!res.ok) {
-        console.warn('Server delete response note:', res.status);
-      }
-    } catch (err) {
-      console.error('Error deleting preset course on server:', err);
-    }
+    await deleteCoursePermanently(courseId);
   };
 
   const handleClosePreset = (courseId: string, e: React.MouseEvent) => {
@@ -230,7 +180,7 @@ export default function NewCoursePage() {
     e.preventDefault();
     markCourseAsOpened(course.id, course);
     setOpenedCourseIds(getOpenedCourseIds());
-    router.push(`/courses/${course.id}`);
+    router.push(`/courses/view?id=${course.id}`);
   };
 
   // Sample quick test JSON for instant testing
@@ -760,7 +710,7 @@ export default function NewCoursePage() {
                               <>
                                 <button
                                   type="button"
-                                  onClick={() => router.push(`/courses/${c.id}`)}
+                                  onClick={() => router.push(`/courses/view?id=${c.id}`)}
                                   className="text-xs font-semibold text-verba-indigo hover:text-verba-indigo-dark flex items-center gap-1 py-1 px-2.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition-colors"
                                 >
                                   <span>Přejít do kurzu</span>
