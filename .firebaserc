@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "futro-app"
+  },
+  "targets": {
+    "futro-app": {
+      "hosting": {
+        "verba": [
+          "verba-app"
+        ]
+      }
+    }
+  }
+}

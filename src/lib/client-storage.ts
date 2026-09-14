@@ -6,6 +6,8 @@
  * user deletion of any course (pre-prepared or custom).
  */
 
+import { saveUserDataToCloud, pullUserDataFromCloud } from './firebase';
+
 const VAULT_KEY = 'verba_master_vault';
 const OPENED_COURSES_KEY = 'verba_opened_course_ids';
 const ACTIVE_COURSE_KEY = 'verba_last_active_course_id';
@@ -137,6 +139,13 @@ export function markCourseAsDeleted(courseId: string) {
         localStorage.removeItem(ACTIVE_COURSE_KEY);
       }
     }
+
+    // 6. Sync deletion to Google Cloud Firestore (permanent cloud persistence)
+    saveUserDataToCloud({
+      deletedCourseIds: deleted,
+      courses: vault.courses,
+      openedCourseIds: opened,
+    }).catch((err) => console.warn('Cloud sync error on delete:', err));
   } catch (e) {
     console.warn('Error marking course as deleted:', e);
   }
@@ -198,6 +207,13 @@ export function saveImportedCourseToStorage(courseData: any) {
 
     // 4. Mark as opened and set active
     markCourseAsOpened(courseData.id, courseData);
+
+    // 5. Sync to Google Cloud Firestore
+    saveUserDataToCloud({
+      courses: vault.courses,
+      deletedCourseIds: getDeletedCourseIds(),
+      activeCourseId: courseData.id,
+    }).catch((err) => console.warn('Cloud sync error on save course:', err));
   } catch (e) {
     console.warn('Error saving imported course to storage:', e);
   }
@@ -434,6 +450,11 @@ export function recordStateProgress(updatedState: any) {
       vault.states.push(updatedState);
     }
     saveClientVault(vault);
+
+    // Sync state to Google Cloud Firestore (permanent cloud progress)
+    saveUserDataToCloud({ states: vault.states }).catch((err) =>
+      console.warn('Cloud sync error on state:', err)
+    );
   } catch (e) {
     console.warn('Error recording state progress:', e);
   }
@@ -447,60 +468,120 @@ export async function performAutoSync(): Promise<{ restoredCourses: number; merg
     const customCourses = getCustomImportedCourses();
     const deletedIds = getDeletedCourseIds();
 
-    // Ensure all custom courses are included in sync payload
+    // 1. CLOUD PULL: Check Google Cloud Firestore for courses or progress from other devices / previous sessions
+    try {
+      const cloudData = await pullUserDataFromCloud();
+      if (cloudData) {
+        // Merge cloud deleted IDs
+        if (Array.isArray(cloudData.deletedCourseIds)) {
+          const localDeleted = new Set(getDeletedCourseIds());
+          cloudData.deletedCourseIds.forEach((id: string) => localDeleted.add(id));
+          localStorage.setItem(DELETED_COURSES_KEY, JSON.stringify(Array.from(localDeleted)));
+        }
+
+        // Merge cloud courses
+        if (Array.isArray(cloudData.courses)) {
+          const localDeleted = new Set(getDeletedCourseIds());
+          const existingMap = new Map((vault.courses || []).map((c: any) => [c.id, c]));
+          for (const cc of cloudData.courses) {
+            if (cc && cc.id && !localDeleted.has(cc.id)) {
+              if (!existingMap.has(cc.id)) {
+                vault.courses.push(cc);
+              } else {
+                existingMap.set(cc.id, { ...existingMap.get(cc.id), ...cc });
+              }
+            }
+          }
+          saveClientVault(vault);
+        }
+
+        // Merge cloud states
+        if (Array.isArray(cloudData.states) && cloudData.states.length > 0) {
+          const stateMap = new Map((vault.states || []).map((s: any) => [s.learning_item_id, s]));
+          for (const cs of cloudData.states) {
+            if (cs && cs.learning_item_id && !stateMap.has(cs.learning_item_id)) {
+              vault.states.push(cs);
+            }
+          }
+          saveClientVault(vault);
+        }
+      }
+    } catch (cloudErr) {
+      console.warn('Cloud pull error during sync:', cloudErr);
+    }
+
+    // 2. SERVER SYNC: Sync with local or hosted backend if reachable
     const courseMap = new Map<string, any>();
+    const currentDeleted = new Set(getDeletedCourseIds());
     for (const c of vault.courses || []) {
-      if (c && c.id && !deletedIds.includes(c.id)) courseMap.set(c.id, c);
+      if (c && c.id && !currentDeleted.has(c.id)) courseMap.set(c.id, c);
     }
     for (const cc of customCourses) {
-      if (cc && cc.id && !deletedIds.includes(cc.id)) courseMap.set(cc.id, { ...courseMap.get(cc.id), ...cc });
+      if (cc && cc.id && !currentDeleted.has(cc.id)) courseMap.set(cc.id, { ...courseMap.get(cc.id), ...cc });
     }
 
-    const res = await fetch('/api/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        clientCourses: Array.from(courseMap.values()),
-        clientStates: vault.states || [],
-        clientLogs: vault.attemptLogs || [],
-        clientDeletedIds: deletedIds,
-      }),
-    });
+    let restoredCount = 0;
+    let mergedCount = 0;
 
-    if (!res.ok) return null;
+    try {
+      const res = await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientCourses: Array.from(courseMap.values()),
+          clientStates: vault.states || [],
+          clientLogs: vault.attemptLogs || [],
+          clientDeletedIds: Array.from(currentDeleted),
+        }),
+      });
 
-    const data = await res.json();
-    if (data.success) {
-      // 1. Sync deleted course IDs from server
-      if (Array.isArray(data.deletedCourseIds)) {
-        const localDeleted = new Set(getDeletedCourseIds());
-        data.deletedCourseIds.forEach((id: string) => localDeleted.add(id));
-        localStorage.setItem(DELETED_COURSES_KEY, JSON.stringify(Array.from(localDeleted)));
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          if (Array.isArray(data.deletedCourseIds)) {
+            const localDel = new Set(getDeletedCourseIds());
+            data.deletedCourseIds.forEach((id: string) => localDel.add(id));
+            localStorage.setItem(DELETED_COURSES_KEY, JSON.stringify(Array.from(localDel)));
+          }
+
+          if (Array.isArray(data.courses) && data.courses.length > 0) {
+            const currentV = getClientVault();
+            const curDel = new Set(getDeletedCourseIds());
+            const mergedCourses = data.courses
+              .filter((sc: any) => !curDel.has(sc.id))
+              .map((sc: any) => {
+                const localMatch = currentV.courses.find((lc: any) => lc.id === sc.id);
+                return localMatch ? { ...sc, ...localMatch } : sc;
+              });
+
+            saveClientVault({
+              courses: mergedCourses,
+              states: data.states || currentV.states,
+            });
+          }
+
+          restoredCount = data.restoredCourses || 0;
+          mergedCount = data.mergedStates || 0;
+        }
       }
-
-      // 2. Update local vault with authoritative server state
-      if (Array.isArray(data.courses) && data.courses.length > 0) {
-        const currentVault = getClientVault();
-        const currentDeleted = new Set(getDeletedCourseIds());
-
-        const mergedCourses = data.courses
-          .filter((sc: any) => !currentDeleted.has(sc.id))
-          .map((sc: any) => {
-            const localMatch = currentVault.courses.find((lc: any) => lc.id === sc.id);
-            return localMatch ? { ...sc, ...localMatch } : sc;
-          });
-
-        saveClientVault({
-          courses: mergedCourses,
-          states: data.states || currentVault.states,
-        });
-      }
-
-      return {
-        restoredCourses: data.restoredCourses || 0,
-        mergedStates: data.mergedStates || 0,
-      };
+    } catch (serverErr) {
+      console.warn('Server sync unavailable (operating offline/cloud mode):', serverErr);
     }
+
+    // 3. CLOUD PUSH: Ensure Google Cloud Firestore has the latest unified snapshot
+    const finalVault = getClientVault();
+    saveUserDataToCloud({
+      courses: finalVault.courses,
+      states: finalVault.states,
+      deletedCourseIds: Array.from(getDeletedCourseIds()),
+      activeCourseId: getLastActiveCourseId() || undefined,
+      openedCourseIds: getOpenedCourseIds(),
+    }).catch((err) => console.warn('Cloud sync error on push:', err));
+
+    return {
+      restoredCourses: restoredCount,
+      mergedStates: mergedCount,
+    };
   } catch (e) {
     console.warn('AutoSync error:', e);
   }
